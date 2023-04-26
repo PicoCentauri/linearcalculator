@@ -17,7 +17,8 @@ from linearcalculator.utils import plot_realization
 _log_dt_fmt = "%Y-%m-%d %H:%M:%S"
 _log_fmt = "[{asctime}] [{levelname}] {name}: {message}"
 logging.basicConfig(format=_log_fmt, datefmt=_log_dt_fmt, style="{", level=logging.INFO)
-logger = logging.getLogger("runner")
+
+logger = logging.getLogger()
 
 
 @contextlib.contextmanager

@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "linearcalcular"
-description = "A frontend to calculator linear models with equisolve and rascaline."
+description = "A frontend to calculate linear models with rascaline and equisolve."
 #readme = "README.rst"
 requires-python = ">=3.8"
 #license = {text = "BSD-3-Clause"}
@@ -27,6 +27,7 @@ dependencies = [
     "equisolve @ https://github.com/lab-cosmo/equisolve/archive/main.zip",
     "rascaline @ https://github.com/luthaf/rascaline/archive/equisolve.zip",
     "scikit-learn",
+    "tomli",
     "tqdm",
 ]
 
