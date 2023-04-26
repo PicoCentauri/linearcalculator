@@ -1,0 +1,24 @@
+dataset = "dataset.xyz"
+label = "cc"
+recalc_descriptors = true
+recalc_power_spectrum = true
+output = "."
+training_cutoffs = [ 7, 8, 9, 10 ]
+
+[sr_hypers]
+cutoff = 3.0
+max_radial = 6
+max_angular = 4
+atomic_gaussian_width = 0.3
+center_atom_weight = 1.0
+radial_basis = { Gto = {} }
+cutoff_function = { ShiftedCosine = { width = 0.5 } }
+
+[lr_hypers]
+cutoff = 3.0
+max_radial = 4
+max_angular = 1
+atomic_gaussian_width = 1.0
+center_atom_weight = 1.0
+radial_basis = { Gto = {} }
+potential_exponent = 1
