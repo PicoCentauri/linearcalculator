@@ -96,7 +96,7 @@ def compute_linear_models(config):
     results = Bunch()
     for r_cut in config["training_cutoffs"]:
         idx_train = [i for i, f in enumerate(frames) if f.info["distance"] < r_cut]
-        idx_test = [i for i, f in enumerate(frames) if f.info["distance"] >= r_cut]
+        idx_test = [i for i, f in enumerate(frames) if f.info["distance"] >= config["test_cutoff"]]
 
         if len(idx_train) == 0:
             raise ValueError(f"No training samples for r_cut={r_cut}!")
@@ -181,6 +181,12 @@ def compute_linear_models(config):
 
             l_clf = len(alpha_values) * [None]
 
+            l_y_pred_train = len(alpha_values) * [None]
+            l_y_pred_test = len(alpha_values) * [None]
+
+            l_f_pred_train = len(alpha_values) * [None]
+            l_f_pred_test = len(alpha_values) * [None]
+
             for i_alpha, alpha_value in enumerate(alpha_values):
                 clf = Ridge(parameter_keys=parameter_keys)
 
@@ -202,6 +208,9 @@ def compute_linear_models(config):
                 # Take force error (gradient wrt to positions) as scorer.
                 f_pred_train = pred_train.gradient("positions").data
                 f_pred_test = pred_test.gradient("positions").data
+
+                l_f_pred_train[i_alpha] = f_pred_train
+                l_f_pred_test[i_alpha] = f_pred_test
 
                 # For energy models we take the force per molecule!
                 if key == "e_f":
@@ -240,6 +249,9 @@ def compute_linear_models(config):
                 # energy error as scorer.
                 y_pred_train = pred_train.values.flatten()
                 y_pred_test = pred_test.values.flatten()
+
+                l_y_pred_train[i_alpha] = y_pred_train
+                l_y_pred_test[i_alpha] = y_pred_test
 
                 y_pred_train -= monomer_energies[realization.idx_train]
                 y_pred_test -= monomer_energies[realization.idx_test]
@@ -283,6 +295,10 @@ def compute_linear_models(config):
                 rmse_e_test=l_rmse_e_test[best_idx],
                 rmse_f_train=l_rmse_f_train[best_idx],
                 rmse_f_test=l_rmse_f_test[best_idx],
+                y_pred_test=l_y_pred_test[best_idx],
+                y_pred_train=l_y_pred_train[best_idx],
+                f_pred_test=l_f_pred_test[best_idx],
+                f_pred_train=l_f_pred_train[best_idx],
             )
 
     return results
