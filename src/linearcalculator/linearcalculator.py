@@ -35,14 +35,12 @@ def setup_dataset(filename, label):
     return frames
 
 
-def compute_linear_models(config):
-    frames = setup_dataset(config["dataset"], config["label"])
-    compute_args = {"systems": frames, "gradients": ["positions"]}
-
+def compute_descriptors(frames, config):
     # Compute descriptor
     fname_sr_descriptor = os.path.join(config["output"], "sr_descriptor.npz")
     fname_lr_descriptor = os.path.join(config["output"], "lr_descriptor.npz")
 
+    compute_args = {"systems": frames, "gradients": ["positions"]}
     if config["recalc_descriptors"]:
         logger.info("Compute short-range descriptor")
         sr_calculator = SphericalExpansion(**config["sr_hypers"])
@@ -92,6 +90,14 @@ def compute_linear_models(config):
     descriptor_co = AtomicComposition(per_structure=True).compute(**compute_args)
     co = descriptor_co.keys_to_properties(["species_center"])
 
+    return [co, ps]
+
+def compute_linear_models(config):
+    frames = setup_dataset(config["dataset"], config["label"])
+
+    co, ps = compute_descriptors(frames, config)
+    X = equistore.join([co, ps], axis="properties")
+
     # Setup training curve
     results = Bunch()
     for r_cut in config["training_cutoffs"]:
@@ -113,7 +119,6 @@ def compute_linear_models(config):
 
     # Setup variables for model paramaters
     y = ase_to_tensormap(frames, energy="energy", forces="forces")
-    X = equistore.join([co, ps], axis="properties")
 
     monomer_energies = np.array([f.info["energyA"] + f.info["energyB"] for f in frames])
     alpha_values = np.logspace(-12, 3, 20)

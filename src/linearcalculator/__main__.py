@@ -97,14 +97,15 @@ def main():
             config = tomli.load(f)
 
         results = compute_linear_models(config)
+        results.config = config
 
-    # Save models to pickle file
-    with open(os.path.join(config["output"], "results.pickle"), "wb") as f:
-        pickle.dump(results, f)
+        # Save models to pickle file
+        with open(os.path.join(config["output"], "results.pickle"), "wb") as f:
+            pickle.dump(results, f)
 
-    if args.plot:
-        for name, realization in results.items():
-            plot_realization(realization, fname=f"{config['output']}/{name}.png")
+        if args.plot:
+            for name, realization in results.items():
+                plot_realization(realization, fname=f"{config['output']}/{name}.png")
 
 
 if __name__ == "__main__":
