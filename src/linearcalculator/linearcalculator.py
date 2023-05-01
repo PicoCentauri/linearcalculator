@@ -107,7 +107,7 @@ def compute_linear_models(config):
         for i, atoms in enumerate(frames):
             if atoms.info["distance"] <= training_cutoff:
                 idx_train.append(i)
-            elif atoms.info["distance"] <= config["test_cutoff"]:
+            elif atoms.info["distance"] >= config["test_cutoff"]:
                 idx_test.append(i)
 
         if len(idx_train) == 0:
