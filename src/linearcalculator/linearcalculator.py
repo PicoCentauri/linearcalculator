@@ -115,6 +115,11 @@ def compute_linear_models(config):
                 f"No training samples for " f"training_cutoff={training_cutoff}!"
             )
 
+        if len(idx_test) == 0:
+            raise ValueError(
+                f"No test samples for " f"training_cutoff={training_cutoff}!"
+            )
+
         results[training_cutoff] = Bunch(idx_train=idx_train, idx_test=idx_test)
 
     labels = Labels(["structure"], np.array([[0]]))
