@@ -92,6 +92,7 @@ def compute_descriptors(frames, config):
 
     return [co, ps]
 
+
 def compute_linear_models(config):
     frames = setup_dataset(config["dataset"], config["label"])
 
@@ -100,14 +101,21 @@ def compute_linear_models(config):
 
     # Setup training curve
     results = Bunch()
-    for r_cut in config["training_cutoffs"]:
-        idx_train = [i for i, f in enumerate(frames) if f.info["distance"] < r_cut]
-        idx_test = [i for i, f in enumerate(frames) if f.info["distance"] >= config["test_cutoff"]]
+    for training_cutoff in config["training_cutoffs"]:
+        idx_train = []
+        idx_test = []
+        for i, atoms in enumerate(frames):
+            if atoms.info["distance"] <= training_cutoff:
+                idx_train.append(i)
+            elif atoms.info["distance"] <= config["test_cutoff"]:
+                idx_test.append(i)
 
         if len(idx_train) == 0:
-            raise ValueError(f"No training samples for r_cut={r_cut}!")
+            raise ValueError(
+                f"No training samples for " f"training_cutoff={training_cutoff}!"
+            )
 
-        results[r_cut] = Bunch(idx_train=idx_train, idx_test=idx_test)
+        results[training_cutoff] = Bunch(idx_train=idx_train, idx_test=idx_test)
 
     labels = Labels(["structure"], np.array([[0]]))
 
@@ -202,8 +210,8 @@ def compute_linear_models(config):
                     with warnings.catch_warnings(record=True) as warns:
                         clf.fit(X_train, y_train, alpha=alpha)
                         for w in warns:
-                           logger.warn(f"{alpha_value:.1e}, {key}: {w.message}")
-                    
+                            logger.warn(f"{alpha_value:.1e}, {key}: {w.message}")
+
                 except LinAlgError as e:
                     logger.warn(f"{alpha_value:.1e}, {key}: {e}")
 
