@@ -20,13 +20,18 @@ from .utils import PARAMETER_KEYS_DICT, compute_power_spectrum
 logger = logging.getLogger(__name__)
 
 
-def setup_dataset(filename, label):
-    frames = ase.io.read(filename, ":")
+def setup_dataset(filenames, label):
+    if type(filenames) not in [list, tuple]:
+        filenames = [filenames]
+
+    frames = []
+    for filename in filenames:
+        frames += ase.io.read(filename, ":")
 
     if label.lower() != "all":
         frames = [f for f in frames if f.info["label"].lower() == label.lower()]
 
-    L = 50
+    L = 100
 
     for frame in frames:
         frame.set_cell(L * np.ones(3))
