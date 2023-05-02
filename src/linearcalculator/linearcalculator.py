@@ -20,7 +20,7 @@ from .utils import PARAMETER_KEYS_DICT, compute_power_spectrum
 logger = logging.getLogger(__name__)
 
 
-def setup_dataset(filenames, label):
+def setup_dataset(filenames, label, cell_length):
     if type(filenames) not in [list, tuple]:
         filenames = [filenames]
 
@@ -31,10 +31,8 @@ def setup_dataset(filenames, label):
     if label.lower() != "all":
         frames = [f for f in frames if f.info["label"].lower() == label.lower()]
 
-    L = 75
-
     for frame in frames:
-        frame.set_cell(L * np.ones(3))
+        frame.set_cell(cell_length * np.ones(3))
         frame.pbc = True
 
     return frames
@@ -99,7 +97,7 @@ def compute_descriptors(frames, config):
 
 
 def compute_linear_models(config):
-    frames = setup_dataset(config["dataset"], config["label"])
+    frames = setup_dataset(config["dataset"], config["label"], config["cell_length"])
 
     co, ps = compute_descriptors(frames, config)
     X = equistore.join([co, ps], axis="properties")
@@ -113,7 +111,7 @@ def compute_linear_models(config):
             delta_distance = atoms.info["distance"] - atoms.info["distance_initial"]
             if delta_distance <= training_cutoff:
                 idx_train.append(i)
-            elif delta_distance >= config["test_cutoff"]:
+            else:
                 idx_test.append(i)
 
         if len(idx_train) == 0:
