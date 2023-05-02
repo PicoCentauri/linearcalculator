@@ -110,9 +110,10 @@ def compute_linear_models(config):
         idx_train = []
         idx_test = []
         for i, atoms in enumerate(frames):
-            if atoms.info["distance"] <= training_cutoff:
+            delta_distance = atoms.info["distance"] - atoms.info["distance_initial"]
+            if delta_distance <= training_cutoff:
                 idx_train.append(i)
-            elif atoms.info["distance"] >= config["test_cutoff"]:
+            elif delta_distance >= config["test_cutoff"]:
                 idx_test.append(i)
 
         if len(idx_train) == 0:
