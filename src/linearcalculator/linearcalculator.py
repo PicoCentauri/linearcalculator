@@ -31,7 +31,7 @@ def setup_dataset(filenames, label):
     if label.lower() != "all":
         frames = [f for f in frames if f.info["label"].lower() == label.lower()]
 
-    L = 100
+    L = 60
 
     for frame in frames:
         frame.set_cell(L * np.ones(3))
