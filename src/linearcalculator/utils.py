@@ -191,12 +191,14 @@ def plot_realization(realization, fname):
 
     for i, key in enumerate(PARAMETER_KEYS_DICT.keys()):
         b = realization[key]
+        color = tab10[i]
 
+        # Energy subplot
         ax[0].plot(
             b.alpha_values,
             b.l_rmse_e_train,
             label=f"{key}: train, RMSE_e_min = {b.rmse_e_train:.1e}",
-            c=tab10[i],
+            c=color,
             ls=":",
         )
 
@@ -204,35 +206,47 @@ def plot_realization(realization, fname):
             b.alpha_values,
             b.l_rmse_e_test,
             label=f"{key}: test, RMSE_e_min = {b.rmse_e_test:.1e}",
-            c=tab10[i],
-        )
-
-        ax[1].plot(
-            b.alpha_values,
-            b.l_rmse_f_train,
-            label=f"{key}: train, RMSE_f_min = {b.rmse_f_train:.1e}",
-            c=tab10[i],
-            ls=":",
-        )
-
-        ax[1].plot(
-            b.alpha_values,
-            b.l_rmse_f_test,
-            label=f"{key}: test, RMSE_f_min = {b.rmse_f_test:.1e}",
-            c=tab10[i],
+            c=color,
         )
 
         ax[0].scatter(
             2 * [b.alpha],
             [b.rmse_e_train, b.rmse_e_test],
-            c=tab10[i],
+            c=color,
         )
 
-        # Plot dots
+        # Force subplot
+        # For energy models (key=="e") we use the force per molecule
+        if key == "e":
+            l_rmse_f_train = b.l_rmse_f_train_mol
+            l_rmse_f_test = b.l_rmse_f_test_mol
+            rmse_f_train = b.rmse_f_train_mol
+            rmse_f_test = b.rmse_f_test_mol
+        else:
+            l_rmse_f_train = b.l_rmse_f_train
+            l_rmse_f_test = b.l_rmse_f_test
+            rmse_f_train = b.rmse_f_train
+            rmse_f_test = b.rmse_f_test
+
+        ax[1].plot(
+            b.alpha_values,
+            l_rmse_f_train,
+            label=f"{key}: train, RMSE_f_min = {b.rmse_f_train:.1e}",
+            c=color,
+            ls=":",
+        )
+
+        ax[1].plot(
+            b.alpha_values,
+            l_rmse_f_test,
+            label=f"{key}: test, RMSE_f_min = {b.rmse_f_test:.1e}",
+            c=color,
+        )
+
         ax[1].scatter(
             2 * [b.alpha],
-            [b.rmse_f_train, b.rmse_f_test],
-            c=tab10[i],
+            [rmse_f_train, rmse_f_test],
+            c=color,
             label=f"α_opt={b.alpha:.1e}",
         )
 
@@ -241,8 +255,8 @@ def plot_realization(realization, fname):
         a.legend()
         a.set(xscale="log", yscale="log", xlabel="α")
 
-    ax[0].set_ylabel("% $RMSE_\mathrm{energy}$")
-    ax[1].set_ylabel("% $RMSE_\mathrm{force}$")
+    ax[0].set_ylabel(r"% $RMSE_\mathrm{energy}$")
+    ax[1].set_ylabel(r"% $RMSE_\mathrm{force}$")
 
     if fname is not None:
         fig.savefig(fname, bbox_inches="tight")

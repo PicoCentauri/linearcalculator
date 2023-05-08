@@ -163,8 +163,8 @@ def compute_linear_models(config):
         y_test_red -= monomer_energies[realization.idx_test]
 
         # Forces
-        f_train_all = y_train[0].gradient("positions").data
-        f_test_all = y_test[0].gradient("positions").data
+        f_train = y_train[0].gradient("positions").data
+        f_test = y_test[0].gradient("positions").data
 
         # Select mol_ids for predicting force per molecule
         mol_idx_train = []
@@ -181,22 +181,23 @@ def compute_linear_models(config):
         mol_idx_test_cumsum = np.cumsum(mol_idx_test)
 
         f_train_mol = [
-            np.sum(m, axis=0) for m in np.split(f_train_all, mol_idx_train_cumsum)
+            np.sum(m, axis=0) for m in np.split(f_train, mol_idx_train_cumsum)
         ]
-        f_test_mol = [
-            np.sum(m, axis=0) for m in np.split(f_test_all, mol_idx_test_cumsum)
-        ]
+        f_test_mol = [np.sum(m, axis=0) for m in np.split(f_test, mol_idx_test_cumsum)]
 
         f_train_mol = np.array(f_train_mol)
         f_test_mol = np.array(f_test_mol)
 
         sigma_energy = np.std(y_train_red)
-        sigma_force_all = np.std(f_train_all)
+        sigma_force = np.std(f_train)
         sigma_force_mol = np.std(f_train_mol)
 
-        for i, (key, parameter_keys) in enumerate(PARAMETER_KEYS_DICT.items()):
+        for key, parameter_keys in PARAMETER_KEYS_DICT.items():
             l_rmse_f_train = np.nan * np.ones(len(alpha_values))
             l_rmse_f_test = np.nan * np.ones(len(alpha_values))
+
+            l_rmse_f_train_mol = np.nan * np.ones(len(alpha_values))
+            l_rmse_f_test_mol = np.nan * np.ones(len(alpha_values))
 
             l_rmse_e_train = np.nan * np.ones(len(alpha_values))
             l_rmse_e_test = np.nan * np.ones(len(alpha_values))
@@ -208,6 +209,9 @@ def compute_linear_models(config):
 
             l_f_pred_train = len(alpha_values) * [None]
             l_f_pred_test = len(alpha_values) * [None]
+
+            l_f_pred_train_mol = len(alpha_values) * [None]
+            l_f_pred_test_mol = len(alpha_values) * [None]
 
             for i_alpha, alpha_value in enumerate(alpha_values):
                 clf = Ridge(parameter_keys=parameter_keys)
@@ -234,29 +238,26 @@ def compute_linear_models(config):
                 l_f_pred_train[i_alpha] = f_pred_train
                 l_f_pred_test[i_alpha] = f_pred_test
 
-                # For energy models we take the force per molecule!
-                if key == "e_f":
-                    f_train = f_train_all
-                    f_test = f_test_all
+                l_f_pred_train_mol[i_alpha] = f_pred_train
+                l_f_pred_test_mol[i_alpha] = f_pred_test
 
-                if key == "e":
-                    f_train = f_train_mol
-                    f_test = f_test_mol
-
-                    f_pred_train = [
+                # force per molecule!
+                f_pred_train_mol = np.array(
+                    [
                         np.sum(m, axis=0)
                         for m in np.split(f_pred_train, mol_idx_train_cumsum)
                     ]
-                    f_pred_test = [
+                )
+                f_pred_test_mol = np.array(
+                    [
                         np.sum(m, axis=0)
                         for m in np.split(f_pred_test, mol_idx_test_cumsum)
                     ]
-
-                    f_pred_train = np.array(f_pred_train)
-                    f_pred_test = np.array(f_pred_test)
+                )
 
                 l_clf[i_alpha] = clf
 
+                # Compute force RMSE
                 l_rmse_f_train[i_alpha] = mean_squared_error(
                     f_pred_train.flatten(),
                     f_train.flatten(),
@@ -268,7 +269,19 @@ def compute_linear_models(config):
                     squared=False,
                 )
 
-                # energy error as scorer.
+                # Compute force per molecule RMSE
+                l_rmse_f_train_mol[i_alpha] = mean_squared_error(
+                    f_pred_train_mol.flatten(),
+                    f_train_mol.flatten(),
+                    squared=False,
+                )
+                l_rmse_f_test_mol[i_alpha] = mean_squared_error(
+                    f_pred_test_mol.flatten(),
+                    f_test_mol.flatten(),
+                    squared=False,
+                )
+
+                # Compute energy RMSE
                 y_pred_train = pred_train.values.flatten()
                 y_pred_test = pred_test.values.flatten()
 
@@ -289,18 +302,20 @@ def compute_linear_models(config):
                     squared=False,
                 )
 
+            l_rmse_f_train *= 100 / sigma_force
+            l_rmse_f_test *= 100 / sigma_force
+
+            l_rmse_f_train_mol *= 100 / sigma_force_mol
+            l_rmse_f_test_mol *= 100 / sigma_force_mol
+
             l_rmse_e_train *= 100 / sigma_energy
             l_rmse_e_test *= 100 / sigma_energy
 
-            if key == "e_f":
-                l_rmse_f_train *= 100 / sigma_force_all
-                l_rmse_f_test *= 100 / sigma_force_all
-            else:
-                l_rmse_f_train *= 100 / sigma_force_mol
-                l_rmse_f_test *= 100 / sigma_force_mol
-
             # Find index of best model
-            best_idx = np.nanargmin((l_rmse_e_test + l_rmse_f_test) / 2)
+            if key == "e_f":
+                best_idx = np.nanargmin((l_rmse_e_test + l_rmse_f_test) / 2)
+            else:
+                best_idx = np.nanargmin((l_rmse_e_test + l_rmse_f_test_mol) / 2)
 
             # Save data
             realization[key] = Bunch(
@@ -310,6 +325,8 @@ def compute_linear_models(config):
                 l_rmse_e_test=l_rmse_e_test,
                 l_rmse_f_train=l_rmse_f_train,
                 l_rmse_f_test=l_rmse_f_test,
+                l_rmse_f_train_mol=l_rmse_f_train_mol,
+                l_rmse_f_test_mol=l_rmse_f_test_mol,
                 best_idx=best_idx,
                 clf=l_clf[best_idx],
                 alpha=alpha_values[best_idx],
@@ -317,10 +334,14 @@ def compute_linear_models(config):
                 rmse_e_test=l_rmse_e_test[best_idx],
                 rmse_f_train=l_rmse_f_train[best_idx],
                 rmse_f_test=l_rmse_f_test[best_idx],
+                rmse_f_train_mol=l_rmse_f_train_mol[best_idx],
+                rmse_f_test_mol=l_rmse_f_test_mol[best_idx],
                 y_pred_test=l_y_pred_test[best_idx],
                 y_pred_train=l_y_pred_train[best_idx],
                 f_pred_test=l_f_pred_test[best_idx],
                 f_pred_train=l_f_pred_train[best_idx],
+                f_pred_test_mol=l_f_pred_test_mol[best_idx],
+                f_pred_train_mol=l_f_pred_train_mol[best_idx],
             )
 
     return results
