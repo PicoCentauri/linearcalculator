@@ -1,3 +1,5 @@
+from typing import List
+
 import logging
 import os
 import warnings
@@ -20,7 +22,36 @@ from .utils import PARAMETER_KEYS_DICT, compute_power_spectrum
 logger = logging.getLogger(__name__)
 
 
-def setup_dataset(filenames, label, cell_length):
+def setup_dataset(filenames: List[List[ase.Atoms]], label: str, cell_length: float):
+    """
+    Read and process `ase.Atoms` from files, filter by label and set cell length.
+
+    Read the given list of ASE Atoms objects from the provided filenames. If filenames
+    is a single object instead of a list, it will be converted to a list.
+
+    If label is provided, return only the atoms objects with info["label"] == label. If
+    label is "all", return all the atoms objects.
+    
+    Set the cell length of all atoms objects to `cell_length` and enable periodic
+    boundary conditions.
+    
+    Parameters:
+    -----------
+    filenames: list of `ase.Atoms` objects
+        List of ASE Atoms objects to read from.
+    label: str
+        The label to match with info["label"] to select specific Atoms objects. If
+        "all", returns all the Atoms objects.
+    cell_length: float
+        The length of the cell for all Atoms objects.
+    
+    Returns:
+    --------
+    frames: list of `ase.Atoms` objects
+        The list of ASE Atoms objects that match the given label (or all Atoms objects
+        if label="all"). The cell length and periodic boundary conditions are set for
+        all returned Atoms objects.
+    """
     if type(filenames) not in [list, tuple]:
         filenames = [filenames]
 

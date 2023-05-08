@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"A frontend to calculator linear models with equisolve and rascaline."
+"""A frontend to calculator linear models with equisolve and rascaline."""
 
 import argparse
 import contextlib
