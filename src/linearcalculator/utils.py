@@ -196,22 +196,22 @@ def plot_realization(realization, fname):
         # Energy subplot
         ax[0].plot(
             b.alpha_values,
-            b.l_rmse_e_train,
-            label=f"{key}: train, RMSE_e_min = {b.rmse_e_train:.1e}",
+            b.l_rmse_y_train,
+            label=f"{key}: train, rmse_y_min = {b.rmse_y_train:.1e}",
             c=color,
             ls=":",
         )
 
         ax[0].plot(
             b.alpha_values,
-            b.l_rmse_e_test,
-            label=f"{key}: test, RMSE_e_min = {b.rmse_e_test:.1e}",
+            b.l_rmse_y_test,
+            label=f"{key}: test, rmse_y_min = {b.rmse_y_test:.1e}",
             c=color,
         )
 
         ax[0].scatter(
             2 * [b.alpha],
-            [b.rmse_e_train, b.rmse_e_test],
+            [b.rmse_y_train, b.rmse_y_test],
             c=color,
         )
 
