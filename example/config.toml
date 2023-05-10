@@ -1,22 +1,24 @@
 dataset = "dataset.xyz"
-cell_length = 50
-label = "cc"
 recalc_descriptors = true
 recalc_power_spectrum = true
 output = "."
-training_cutoffs = [ 1, 2, 3, 4, 5, 6, 7, 8 ]
+train_size = 0.9
+n_train_start = 5
+n_train_num = 10
+random_state = 0
 
 [sr_hypers]
-cutoff = 3.0
-max_radial = 6
-max_angular = 4
-atomic_gaussian_width = 0.3
+cutoff = 5.0
+max_radial = 8
+max_angular = 6
+atomic_gaussian_width = 0.25
 center_atom_weight = 1.0
-radial_basis = { Gto = {} }
+radial_basis = { Gto = { spline_accuracy = 1e-5 } }
 cutoff_function = { ShiftedCosine = { width = 0.5 } }
+radial_scaling = { Willatt2018 = { scale = 2.0, rate = 3.0, exponent = 6} }
 
 [lr_hypers]
-cutoff = 3.0
+cutoff = 5.0
 max_radial = 4
 max_angular = 1
 atomic_gaussian_width = 1.0

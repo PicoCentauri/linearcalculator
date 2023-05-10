@@ -18,7 +18,7 @@ _log_dt_fmt = "%Y-%m-%d %H:%M:%S"
 _log_fmt = "[{asctime}] [{levelname}] {name}: {message}"
 logging.basicConfig(format=_log_fmt, datefmt=_log_dt_fmt, style="{", level=logging.INFO)
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 
 @contextlib.contextmanager

@@ -1,10 +1,11 @@
-from typing import List
+"""The main function for generating the linear model."""
 
 import logging
 import os
 import warnings
+from typing import List
 
-import ase.io
+import ase
 import equistore
 import numpy as np
 from equisolve.numpy.models import Ridge
@@ -16,60 +17,37 @@ from sklearn.metrics import mean_squared_error
 from sklearn.utils import Bunch
 from tqdm.auto import tqdm
 
-from .utils import PARAMETER_KEYS_DICT, compute_power_spectrum
+from .utils import (
+    PARAMETER_KEYS_DICT,
+    compute_power_spectrum,
+    setup_dataset,
+    training_curve_split,
+)
 
 
 logger = logging.getLogger(__name__)
 
 
-def setup_dataset(filenames: List[List[ase.Atoms]], label: str, cell_length: float):
+def compute_descriptors(frames: List[ase.Atoms], config: dict):
+    """Compute atomic the composition and the power spectrum descriptor.
+
+    Parameters
+    ----------
+    frames : List[ase.Atoms]
+        A list of atomic systems represented as ASE Atoms objects.
+    config : dict
+        A dictionary containing the configuration parameters for descriptor computation.
+
+    Returns
+    -------
+    co : equistore.TensorMap
+        composition descriptor (co) representing the atomic composition of the
+        structures.
+    ps : equistore.TensorMap
+        power spectrum descriptor (ps) representing the rotationally invariant power
+        spectrum.
     """
-    Read and process `ase.Atoms` from files, filter by label and set cell length.
 
-    Read the given list of ASE Atoms objects from the provided filenames. If filenames
-    is a single object instead of a list, it will be converted to a list.
-
-    If label is provided, return only the atoms objects with info["label"] == label. If
-    label is "all", return all the atoms objects.
-    
-    Set the cell length of all atoms objects to `cell_length` and enable periodic
-    boundary conditions.
-    
-    Parameters:
-    -----------
-    filenames: list of `ase.Atoms` objects
-        List of ASE Atoms objects to read from.
-    label: str
-        The label to match with info["label"] to select specific Atoms objects. If
-        "all", returns all the Atoms objects.
-    cell_length: float
-        The length of the cell for all Atoms objects.
-    
-    Returns:
-    --------
-    frames: list of `ase.Atoms` objects
-        The list of ASE Atoms objects that match the given label (or all Atoms objects
-        if label="all"). The cell length and periodic boundary conditions are set for
-        all returned Atoms objects.
-    """
-    if type(filenames) not in [list, tuple]:
-        filenames = [filenames]
-
-    frames = []
-    for filename in filenames:
-        frames += ase.io.read(filename, ":")
-
-    if label.lower() != "all":
-        frames = [f for f in frames if f.info["label"].lower() == label.lower()]
-
-    for frame in frames:
-        frame.set_cell(cell_length * np.ones(3))
-        frame.pbc = True
-
-    return frames
-
-
-def compute_descriptors(frames, config):
     # Compute descriptor
     fname_sr_descriptor = os.path.join(config["output"], "sr_descriptor.npz")
     fname_lr_descriptor = os.path.join(config["output"], "lr_descriptor.npz")
@@ -124,38 +102,27 @@ def compute_descriptors(frames, config):
     descriptor_co = AtomicComposition(per_structure=True).compute(**compute_args)
     co = descriptor_co.keys_to_properties(["species_center"])
 
-    return [co, ps]
+    return co, ps
 
 
-def compute_linear_models(config):
-    frames = setup_dataset(config["dataset"], config["label"], config["cell_length"])
+def compute_linear_models(config: dict):
+    frames = setup_dataset(config["dataset"])
 
     co, ps = compute_descriptors(frames, config)
     X = equistore.join([co, ps], axis="properties")
 
     # Setup training curve
+    l_idx_train, idx_test = training_curve_split(
+        n_structures=len(frames),
+        train_size=config["train_size"],
+        n_train_num=config["n_train_num"],
+        n_train_start=config["n_train_start"],
+        random_state=config["random_state"],
+    )
+
     results = Bunch()
-    for training_cutoff in config["training_cutoffs"]:
-        idx_train = []
-        idx_test = []
-        for i, atoms in enumerate(frames):
-            delta_distance = atoms.info["distance"] - atoms.info["distance_initial"]
-            if delta_distance <= training_cutoff:
-                idx_train.append(i)
-            else:
-                idx_test.append(i)
-
-        if len(idx_train) == 0:
-            raise ValueError(
-                f"No training samples for " f"training_cutoff={training_cutoff}!"
-            )
-
-        if len(idx_test) == 0:
-            raise ValueError(
-                f"No test samples for " f"training_cutoff={training_cutoff}!"
-            )
-
-        results[training_cutoff] = Bunch(idx_train=idx_train, idx_test=idx_test)
+    for idx_train in l_idx_train:
+        results[len(idx_train)] = Bunch(idx_train=idx_train, idx_test=idx_test)
 
     labels = Labels(["structure"], np.array([[0]]))
 
@@ -168,11 +135,10 @@ def compute_linear_models(config):
     # Setup variables for model paramaters
     y = ase_to_tensormap(frames, energy="energy", forces="forces")
 
-    monomer_energies = np.array([f.info["energyA"] + f.info["energyB"] for f in frames])
     alpha_values = np.logspace(-12, 3, 20)
 
     # Fit the models
-    for realization in tqdm(results.values(), desc="fit models"):
+    for realization in tqdm(results.values(), desc="Fit models"):
         # Select samples for current run
         samples_train = Labels(
             ["structure"], np.reshape(realization.idx_train, (-1, 1))
@@ -184,47 +150,20 @@ def compute_linear_models(config):
             "grouped_labels": [samples_train, samples_test],
         }
         X_train, X_test = equistore.split(X, **split_args)
-        y_train, y_test = equistore.split(y, **split_args)
-
-        # Only used for energy error
-        y_train_red = y_train[0].values.flatten()
-        y_test_red = y_test[0].values.flatten()
-
-        y_train_red -= monomer_energies[realization.idx_train]
-        y_test_red -= monomer_energies[realization.idx_test]
+        tensor_y_train, tensor_y_test = equistore.split(y, **split_args)
 
         # Forces
-        f_train = y_train[0].gradient("positions").data
-        f_test = y_test[0].gradient("positions").data
+        f_train = tensor_y_train[0].gradient("positions").data.flatten()
+        f_test = tensor_y_test[0].gradient("positions").data.flatten()
 
-        # Select mol_ids for predicting force per molecule
-        mol_idx_train = []
-        mol_idx_test = []
-        for i, f in enumerate(frames):
-            idx = [f.info["indexB"], len(f) - f.info["indexB"]]
+        # Energies
+        y_train = tensor_y_train[0].values.flatten()
+        y_test = tensor_y_test[0].values.flatten()
 
-            if i in realization.idx_train:
-                mol_idx_train += idx
-            elif i in realization.idx_test:
-                mol_idx_test += idx
-
-        mol_idx_train_cumsum = np.cumsum(mol_idx_train)
-        mol_idx_test_cumsum = np.cumsum(mol_idx_test)
-
-        f_train_mol = [
-            np.sum(m, axis=0) for m in np.split(f_train, mol_idx_train_cumsum)
-        ]
-        f_test_mol = [np.sum(m, axis=0) for m in np.split(f_test, mol_idx_test_cumsum)]
-
-        f_train_mol = np.array(f_train_mol)
-        f_test_mol = np.array(f_test_mol)
-
-        sigma_energy = np.std(y_train_red)
-        sigma_force = np.std(f_train)
-        sigma_force_mol = np.std(f_train_mol)
+        sigma_y = np.std(y_train)
+        sigma_f = np.std(f_train)
 
         for key, parameter_keys in PARAMETER_KEYS_DICT.items():
-
             # Create lists for storing values
             l_clf = len(alpha_values) * [None]
 
@@ -232,11 +171,6 @@ def compute_linear_models(config):
             l_f_pred_test = len(alpha_values) * [None]
             l_rmse_f_train = np.nan * np.ones(len(alpha_values))
             l_rmse_f_test = np.nan * np.ones(len(alpha_values))
-
-            l_f_pred_train_mol = len(alpha_values) * [None]
-            l_f_pred_test_mol = len(alpha_values) * [None]
-            l_rmse_f_train_mol = np.nan * np.ones(len(alpha_values))
-            l_rmse_f_test_mol = np.nan * np.ones(len(alpha_values))
 
             l_y_pred_train = len(alpha_values) * [None]
             l_y_pred_test = len(alpha_values) * [None]
@@ -251,7 +185,7 @@ def compute_linear_models(config):
 
                 try:
                     with warnings.catch_warnings(record=True) as warns:
-                        clf.fit(X_train, y_train, alpha=alpha)
+                        clf.fit(X_train, tensor_y_train, alpha=alpha)
                         for w in warns:
                             logger.warn(f"{alpha_value:.1e}, {key}: {w.message}")
 
@@ -263,54 +197,18 @@ def compute_linear_models(config):
                 pred_test = clf.predict(X_test)[0]
 
                 # Compute gradient RMSE
-                f_pred_train = pred_train.gradient("positions").data
-                f_pred_test = pred_test.gradient("positions").data
+                f_pred_train = pred_train.gradient("positions").data.flatten()
+                f_pred_test = pred_test.gradient("positions").data.flatten()
 
-                rmse_f_train = mean_squared_error(
-                    f_pred_train.flatten(),
-                    f_train.flatten(),
-                    squared=False,
-                )
-                rmse_f_test = mean_squared_error(
-                    f_pred_test.flatten(),
-                    f_test.flatten(),
-                    squared=False,
-                )
-
-                # Compute gradient per molecules RMSE
-                f_pred_train_mol = np.array(
-                    [
-                        np.sum(m, axis=0)
-                        for m in np.split(f_pred_train, mol_idx_train_cumsum)
-                    ]
-                )
-                f_pred_test_mol = np.array(
-                    [
-                        np.sum(m, axis=0)
-                        for m in np.split(f_pred_test, mol_idx_test_cumsum)
-                    ]
-                )
-
-                rmse_f_train_mol = mean_squared_error(
-                    f_pred_train_mol.flatten(),
-                    f_train_mol.flatten(),
-                    squared=False,
-                )
-                rmse_f_test_mol = mean_squared_error(
-                    f_pred_test_mol.flatten(),
-                    f_test_mol.flatten(),
-                    squared=False,
-                )
+                #rmse_f_train = mean_squared_error(f_pred_train, f_train, squared=False)
+                rmse_f_test = mean_squared_error(f_pred_test, f_test, squared=False)
 
                 # Compute energy RMSE
                 y_pred_train = pred_train.values.flatten()
                 y_pred_test = pred_test.values.flatten()
 
-                y_pred_train -= monomer_energies[realization.idx_train]
-                y_pred_test -= monomer_energies[realization.idx_test]
-
-                rmse_y_train = mean_squared_error(y_pred_train, y_train_red, squared=False)
-                rmse_y_test = mean_squared_error(y_pred_test, y_test_red, squared=False)
+                rmse_y_train = mean_squared_error(y_pred_train, y_train, squared=False)
+                rmse_y_test = mean_squared_error(y_pred_test, y_test, squared=False)
 
                 # Store predictions
                 l_clf[i_alpha] = clf
@@ -318,32 +216,21 @@ def compute_linear_models(config):
                 l_f_pred_train[i_alpha] = f_pred_train
                 l_f_pred_test[i_alpha] = f_pred_test
                 l_rmse_f_test[i_alpha] = rmse_f_test
-                l_rmse_f_train[i_alpha] = rmse_f_train
-
-                l_f_pred_train_mol[i_alpha] = f_pred_train_mol
-                l_f_pred_test_mol[i_alpha] = f_pred_test_mol
-                l_rmse_f_test_mol[i_alpha] = rmse_f_test_mol
-                l_rmse_f_train_mol[i_alpha] = rmse_f_train_mol
+                #l_rmse_f_train[i_alpha] = rmse_f_train
 
                 l_y_pred_train[i_alpha] = y_pred_train
                 l_y_pred_test[i_alpha] = y_pred_test
                 l_rmse_y_train[i_alpha] = rmse_y_train
                 l_rmse_y_test[i_alpha] = rmse_y_test
 
-            l_rmse_f_train *= 100 / sigma_force
-            l_rmse_f_test *= 100 / sigma_force
+            l_rmse_f_train *= 100 / sigma_f
+            l_rmse_f_test *= 100 / sigma_f
 
-            l_rmse_f_train_mol *= 100 / sigma_force_mol
-            l_rmse_f_test_mol *= 100 / sigma_force_mol
-
-            l_rmse_y_train *= 100 / sigma_energy
-            l_rmse_y_test *= 100 / sigma_energy
+            l_rmse_y_train *= 100 / sigma_y
+            l_rmse_y_test *= 100 / sigma_y
 
             # Find index of best model
-            if key == "e_f":
-                best_idx = np.nanargmin((l_rmse_y_test + l_rmse_f_test) / 2)
-            else:
-                best_idx = np.nanargmin((l_rmse_y_test + l_rmse_f_test_mol) / 2)
+            best_idx = np.nanargmin((l_rmse_y_test + l_rmse_f_test) / 2)
 
             # Save data
             realization[key] = Bunch(
@@ -359,14 +246,7 @@ def compute_linear_models(config):
                 f_pred_train=l_f_pred_train[best_idx],
                 rmse_f_train=l_rmse_f_train[best_idx],
                 rmse_f_test=l_rmse_f_test[best_idx],
-                # gradients per molecule
-                l_rmse_f_train_mol=l_rmse_f_train_mol,
-                l_rmse_f_test_mol=l_rmse_f_test_mol,
-                f_pred_test_mol=l_f_pred_test_mol[best_idx],
-                f_pred_train_mol=l_f_pred_train_mol[best_idx],
-                rmse_f_train_mol=l_rmse_f_train_mol[best_idx],
-                rmse_f_test_mol=l_rmse_f_test_mol[best_idx],
-                 # values
+                # values
                 l_rmse_y_train=l_rmse_y_train,
                 l_rmse_y_test=l_rmse_y_test,
                 y_pred_test=l_y_pred_test[best_idx],
