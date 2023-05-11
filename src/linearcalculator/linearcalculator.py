@@ -12,7 +12,12 @@ from equisolve.numpy.models import Ridge
 from equisolve.utils.convert import ase_to_tensormap
 from equistore import Labels
 from numpy.linalg import LinAlgError
-from rascaline import AtomicComposition, LodeSphericalExpansion, SphericalExpansion
+from rascaline import (
+    AtomicComposition,
+    LodeSphericalExpansion,
+    SoapPowerSpectrum,
+    SphericalExpansion,
+)
 from sklearn.metrics import mean_squared_error
 from sklearn.utils import Bunch
 from tqdm.auto import tqdm
@@ -53,22 +58,21 @@ def compute_descriptors(frames: List[ase.Atoms], config: dict):
     fname_lr_descriptor = os.path.join(config["output"], "lr_descriptor.npz")
 
     compute_args = {"systems": frames, "gradients": ["positions"]}
-    if config["recalc_descriptors"]:
-        logger.info("Compute short-range descriptor")
-        sr_calculator = SphericalExpansion(**config["sr_hypers"])
-        sr_descriptor = sr_calculator.compute(**compute_args)
-        equistore.io.save(fname_sr_descriptor, sr_descriptor)
+    if config["lr_hypers"]["potential_exponent"] != 0:
+        if config["recalc_descriptors"]:
+            logger.info("Compute short-range descriptor")
+            sr_calculator = SphericalExpansion(**config["sr_hypers"])
+            sr_descriptor = sr_calculator.compute(**compute_args)
+            equistore.io.save(fname_sr_descriptor, sr_descriptor)
 
-        if config["lr_hypers"]["potential_exponent"] != 0:
             logger.info("Compute long-range descriptor")
             lr_calculator = LodeSphericalExpansion(**config["lr_hypers"])
             lr_descriptor = lr_calculator.compute(**compute_args)
             equistore.io.save(fname_lr_descriptor, lr_descriptor)
-    else:
-        logger.info("Load short-range descriptor")
-        sr_descriptor = equistore.io.load(fname_sr_descriptor)
+        else:
+            logger.info("Load short-range descriptor")
+            sr_descriptor = equistore.io.load(fname_sr_descriptor)
 
-        if config["lr_hypers"]["potential_exponent"] != 0:
             logger.info("Load long-range descriptor")
             lr_descriptor = equistore.io.load(fname_lr_descriptor)
 
@@ -77,17 +81,17 @@ def compute_descriptors(frames: List[ase.Atoms], config: dict):
     if config["recalc_power_spectrum"]:
         logger.info("Compute power spectrum")
         if config["lr_hypers"]["potential_exponent"] == 0:
-            ts = compute_power_spectrum(sr_descriptor)
-            del sr_descriptor
+            sr_calculator = SoapPowerSpectrum(**config["sr_hypers"])
+            ts = sr_calculator.compute(**compute_args)
         else:
             ts = compute_power_spectrum(sr_descriptor, lr_descriptor)
+            ts = ts.keys_to_properties(["spherical_harmonics_l"])
+
             del lr_descriptor
             del sr_descriptor
 
+        ts = ts.keys_to_properties(["species_neighbor_1", "species_neighbor_2"])
         ts = ts.keys_to_samples(["species_center"])
-        ts = ts.keys_to_properties(
-            ["species_neighbor_1", "species_neighbor_2", "spherical_harmonics_l"]
-        )
 
         # Sum over all center species per structure
         ps = equistore.sum_over_samples(ts, ["center", "species_center"])
@@ -200,7 +204,7 @@ def compute_linear_models(config: dict):
                 f_pred_train = pred_train.gradient("positions").data.flatten()
                 f_pred_test = pred_test.gradient("positions").data.flatten()
 
-                #rmse_f_train = mean_squared_error(f_pred_train, f_train, squared=False)
+                # rmse_f_train = mean_squared_error(f_pred_train, f_train, squared=False)
                 rmse_f_test = mean_squared_error(f_pred_test, f_test, squared=False)
 
                 # Compute energy RMSE
@@ -216,7 +220,7 @@ def compute_linear_models(config: dict):
                 l_f_pred_train[i_alpha] = f_pred_train
                 l_f_pred_test[i_alpha] = f_pred_test
                 l_rmse_f_test[i_alpha] = rmse_f_test
-                #l_rmse_f_train[i_alpha] = rmse_f_train
+                # l_rmse_f_train[i_alpha] = rmse_f_train
 
                 l_y_pred_train[i_alpha] = y_pred_train
                 l_y_pred_test[i_alpha] = y_pred_test
