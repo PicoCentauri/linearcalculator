@@ -1,6 +1,6 @@
 dataset = "dataset.xyz"
 cell_length = 50
-label = "cc"
+label = "!cc"  # no label cc
 recalc_descriptors = true
 recalc_power_spectrum = true
 output = "."

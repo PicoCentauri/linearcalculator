@@ -59,7 +59,10 @@ def setup_dataset(filenames: List[List[ase.Atoms]], label: str, cell_length: flo
     for filename in filenames:
         frames += ase.io.read(filename, ":")
 
-    if label.lower() != "all":
+    label = label.lower()
+    if label[0] == "!":
+        frames = [f for f in frames if f.info["label"].lower() != label[1:]]
+    elif label != "all":
         frames = [f for f in frames if f.info["label"].lower() == label.lower()]
 
     for frame in frames:
