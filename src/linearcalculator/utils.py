@@ -201,7 +201,8 @@ def compute_power_spectrum(
             )
 
             # Compute the invariants by summation and store the results
-            data = factor * np.einsum("ima, imb -> iab", spx_1.values, spx_2.values)
+            # Operation: ima, imb -> iab
+            data = factor * np.matmul(spx_1.values.swapaxes(1, 2), spx_2.values)
 
             block = TensorBlock(
                 values=data.reshape(data.shape[0], -1),
@@ -234,19 +235,21 @@ def compute_power_spectrum(
 
                 gradient_data = np.zeros([gradients_samples.shape[0], 3, n_properties])
 
-                gradient_data_1 = factor * np.einsum(
-                    "ixma, imb -> ixab",
-                    gradient_1.data,
-                    spx_2.values[gradient_1.samples["sample"], :, :],
+                # operation: ixma, imb -> ixab
+                gradient_data_1 = factor * np.matmul(
+                    gradient_1.data.swapaxes(2, 3),
+                    spx_2.values[gradient_1.samples["sample"], np.newaxis, :, :],
                 ).reshape(gradient_1.samples.shape[0], 3, -1)
 
                 for sample, row in zip(gradient_1.samples, gradient_data_1):
                     new_row = gradients_sample_mapping[tuple(sample)]
                     gradient_data[new_row, :, :] += row
 
-                gradient_data_2 = factor * np.einsum(
-                    "ima, ixmb -> ixab",
-                    spx_1.values[gradient_2.samples["sample"], :, :],
+                # operation: ima, ixmb -> ixab
+                gradient_data_2 = factor * np.matmul(
+                    spx_1.values[
+                        gradient_2.samples["sample"], np.newaxis, :, :
+                    ].swapaxes(2, 3),
                     gradient_2.data,
                 ).reshape(gradient_2.samples.shape[0], 3, -1)
 
