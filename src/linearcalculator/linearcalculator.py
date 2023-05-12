@@ -1,8 +1,7 @@
-from typing import List
-
 import logging
 import os
 import warnings
+from typing import List
 
 import ase.io
 import equistore
@@ -31,10 +30,10 @@ def setup_dataset(filenames: List[List[ase.Atoms]], label: str, cell_length: flo
 
     If label is provided, return only the atoms objects with info["label"] == label. If
     label is "all", return all the atoms objects.
-    
+
     Set the cell length of all atoms objects to `cell_length` and enable periodic
     boundary conditions.
-    
+
     Parameters:
     -----------
     filenames: list of `ase.Atoms` objects
@@ -44,7 +43,7 @@ def setup_dataset(filenames: List[List[ase.Atoms]], label: str, cell_length: flo
         "all", returns all the Atoms objects.
     cell_length: float
         The length of the cell for all Atoms objects.
-    
+
     Returns:
     --------
     frames: list of `ase.Atoms` objects
@@ -227,7 +226,6 @@ def compute_linear_models(config):
         sigma_force_mol = np.std(f_train_mol)
 
         for key, parameter_keys in PARAMETER_KEYS_DICT.items():
-
             # Create lists for storing values
             l_clf = len(alpha_values) * [None]
 
@@ -312,7 +310,9 @@ def compute_linear_models(config):
                 y_pred_train -= monomer_energies[realization.idx_train]
                 y_pred_test -= monomer_energies[realization.idx_test]
 
-                rmse_y_train = mean_squared_error(y_pred_train, y_train_red, squared=False)
+                rmse_y_train = mean_squared_error(
+                    y_pred_train, y_train_red, squared=False
+                )
                 rmse_y_test = mean_squared_error(y_pred_test, y_test_red, squared=False)
 
                 # Store predictions
@@ -369,7 +369,7 @@ def compute_linear_models(config):
                 f_pred_train_mol=l_f_pred_train_mol[best_idx],
                 rmse_f_train_mol=l_rmse_f_train_mol[best_idx],
                 rmse_f_test_mol=l_rmse_f_test_mol[best_idx],
-                 # values
+                # values
                 l_rmse_y_train=l_rmse_y_train,
                 l_rmse_y_test=l_rmse_y_test,
                 y_pred_test=l_y_pred_test[best_idx],
