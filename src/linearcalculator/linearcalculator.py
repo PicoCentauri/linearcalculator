@@ -10,7 +10,7 @@ import equistore
 import numpy as np
 from equisolve.numpy.models import Ridge
 from equisolve.utils.convert import ase_to_tensormap
-from equistore import Labels
+from equistore import Labels, TensorBlock, TensorMap
 from numpy.linalg import LinAlgError
 from rascaline import (
     AtomicComposition,
@@ -55,7 +55,6 @@ def compute_descriptors(frames: List[ase.Atoms], config: dict):
 
     if config["recalc_descriptors"]:
         logger.info("Compute descriptors")
-        l_co = []
         l_ps = []
 
         start = 0
@@ -90,21 +89,32 @@ def compute_descriptors(frames: List[ase.Atoms], config: dict):
             l_ps.append(equistore.sum_over_samples(ts, ["center", "species_center"]))
             del ts
 
-            # Compute structure calculator
-            co_calculator = AtomicComposition(per_structure=True)
-            descriptor_co = co_calculator.compute(**compute_args)
-            l_co.append(descriptor_co.keys_to_properties(["species_center"]))
+        ps_pre = equistore.join(l_ps, axis="samples")
 
-        ps = equistore.join(l_ps, axis="samples")
-        co = equistore.join(l_co, axis="samples")
+        # Create a new block dropping the "tensor" sample
+        block = ps_pre[0]
+        ps_block = TensorBlock(
+            values=block.values,
+            samples=Labels(["structure"], np.reshape(np.arange(len(frames)), (-1, 1))),
+            components=block.components,
+            properties=block.properties
+        )
 
+        gradient = ps_pre[0].gradient("positions")
+        ps_block.add_gradient(
+            data=gradient.data,
+            samples=gradient.samples,
+            components=gradient.components,
+        )
+
+        ps = TensorMap(keys=ps_pre.keys, blocks=[ps_block])
         equistore.io.save(os.path.join(config["output"], "descriptor_ps.npz"), ps)
-        equistore.io.save(os.path.join(config["output"], "descriptor_co.npz"), co)
-
     else:
         logger.info("Load descriptors from file")
         ps = equistore.io.load(os.path.join(config["output"], "descriptor_ps.npz"))
-        co = equistore.io.load(os.path.join(config["output"], "descriptor_co.npz"))
+
+    # Compute structure calculator
+    co = AtomicComposition(per_structure=True).compute(**compute_args)
 
     return co, ps
 
@@ -143,17 +153,13 @@ def compute_linear_models(config: dict):
 
     # Fit the models
     for realization in tqdm(results.values(), desc="Fit models"):
+        split_args = {
+            "axis": "samples",
+            "grouped_labels": [X[0].samples[idx_train], X[0].samples[idx_test]],
+        }
         # Select samples for current run
-        X_train, X_test = equistore.split(
-            X,
-            axis="samples",
-            grouped_labels=[X[0].samples[idx_train], X[0].samples[idx_test]],
-        )
-        tensor_y_train, tensor_y_test = equistore.split(
-            y,
-            axis="samples",
-            grouped_labels=[y[0].samples[idx_train], y[0].samples[idx_test]],
-        )
+        X_train, X_test = equistore.split(X, **split_args)
+        tensor_y_train, tensor_y_test = equistore.split(y, **split_args)
 
         # Forces
         f_train = tensor_y_train[0].gradient("positions").data.flatten()
