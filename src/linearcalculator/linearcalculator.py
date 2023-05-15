@@ -102,6 +102,7 @@ def compute_descriptors(frames: List[ase.Atoms], config: dict):
 
         gradient = ps_pre[0].gradient("positions")
         ps_block.add_gradient(
+            parameter="positions",
             data=gradient.data,
             samples=gradient.samples,
             components=gradient.components,
