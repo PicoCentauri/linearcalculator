@@ -53,58 +53,58 @@ def compute_descriptors(frames: List[ase.Atoms], config: dict):
         spectrum.
     """
 
-    # Compute descriptor
-    fname_sr_descriptor = os.path.join(config["output"], "sr_descriptor.npz")
-    fname_lr_descriptor = os.path.join(config["output"], "lr_descriptor.npz")
+    if config["recalc_descriptors"]:
+        logger.info("Compute descriptors")
+        l_co = []
+        l_ps = []
 
-    compute_args = {"systems": frames, "gradients": ["positions"]}
-    if config["lr_hypers"]["potential_exponent"] != 0:
-        if config["recalc_descriptors"]:
-            logger.info("Compute short-range descriptor")
-            sr_calculator = SphericalExpansion(**config["sr_hypers"])
-            sr_descriptor = sr_calculator.compute(**compute_args)
-            equistore.io.save(fname_sr_descriptor, sr_descriptor)
+        start = 0
+        stop = config["batch_size"]
+        while start < len(frames):
+            compute_args = {"systems": frames[start:stop], "gradients": ["positions"]}
+            start += config["batch_size"]
+            stop += config["batch_size"]
 
-            logger.info("Compute long-range descriptor")
-            lr_calculator = LodeSphericalExpansion(**config["lr_hypers"])
-            lr_descriptor = lr_calculator.compute(**compute_args)
-            equistore.io.save(fname_lr_descriptor, lr_descriptor)
-        else:
-            logger.info("Load short-range descriptor")
-            sr_descriptor = equistore.io.load(fname_sr_descriptor)
+            # Compute spherical expanions and power spectrum
+            if config["lr_hypers"]["potential_exponent"] != 0:
+                sr_calculator = SphericalExpansion(**config["sr_hypers"])
+                sr_descriptor = sr_calculator.compute(**compute_args)
 
-            logger.info("Load long-range descriptor")
-            lr_descriptor = equistore.io.load(fname_lr_descriptor)
+                lr_calculator = LodeSphericalExpansion(**config["lr_hypers"])
+                lr_descriptor = lr_calculator.compute(**compute_args)
 
-    # Compute powerspectrum
-    fname_ps = "power_spectrum.npz"
-    if config["recalc_power_spectrum"]:
-        logger.info("Compute power spectrum")
-        if config["lr_hypers"]["potential_exponent"] == 0:
-            sr_calculator = SoapPowerSpectrum(**config["sr_hypers"])
-            ts = sr_calculator.compute(**compute_args)
-        else:
-            ts = compute_power_spectrum(sr_descriptor, lr_descriptor)
-            ts = ts.keys_to_properties(["spherical_harmonics_l"])
+                ts = compute_power_spectrum(sr_descriptor, lr_descriptor)
+                ts = ts.keys_to_properties(["spherical_harmonics_l"])
 
-            del lr_descriptor
-            del sr_descriptor
+                del lr_descriptor
+                del sr_descriptor
+            else:
+                sr_calculator = SoapPowerSpectrum(**config["sr_hypers"])
+                ts = sr_calculator.compute(**compute_args)
 
-        ts = ts.keys_to_properties(["species_neighbor_1", "species_neighbor_2"])
-        ts = ts.keys_to_samples(["species_center"])
+            # Do structure sum
+            ts = ts.keys_to_properties(["species_neighbor_1", "species_neighbor_2"])
+            ts = ts.keys_to_samples(["species_center"])
 
-        # Sum over all center species per structure
-        ps = equistore.sum_over_samples(ts, ["center", "species_center"])
-        del ts
+            # Sum over all center species per structure
+            l_ps.append(equistore.sum_over_samples(ts, ["center", "species_center"]))
+            del ts
 
-        equistore.io.save(fname_ps, ps)
+            # Compute structure calculator
+            co_calculator = AtomicComposition(per_structure=True)
+            descriptor_co = co_calculator.compute(**compute_args)
+            l_co.append(descriptor_co.keys_to_properties(["species_center"]))
+
+        ps = equistore.join(l_ps, axis="samples")
+        co = equistore.join(l_co, axis="samples")
+
+        equistore.io.save(os.path.join(config["output"], "descriptor_ps.npz"), ps)
+        equistore.io.save(os.path.join(config["output"], "descriptor_co.npz"), co)
+
     else:
-        logger.info("Load power spectrum")
-        ps = equistore.io.load(fname_ps)
-
-    # Compute structure calculator
-    descriptor_co = AtomicComposition(per_structure=True).compute(**compute_args)
-    co = descriptor_co.keys_to_properties(["species_center"])
+        logger.info("Load descriptors from file")
+        ps = equistore.io.load(os.path.join(config["output"], "descriptor_ps.npz"))
+        co = equistore.io.load(os.path.join(config["output"], "descriptor_co.npz"))
 
     return co, ps
 
@@ -144,17 +144,16 @@ def compute_linear_models(config: dict):
     # Fit the models
     for realization in tqdm(results.values(), desc="Fit models"):
         # Select samples for current run
-        samples_train = Labels(
-            ["structure"], np.reshape(realization.idx_train, (-1, 1))
+        X_train, X_test = equistore.split(
+            X,
+            axis="samples",
+            grouped_labels=[X[0].samples[idx_train], X[0].samples[idx_test]],
         )
-        samples_test = Labels(["structure"], np.reshape(realization.idx_test, (-1, 1)))
-
-        split_args = {
-            "axis": "samples",
-            "grouped_labels": [samples_train, samples_test],
-        }
-        X_train, X_test = equistore.split(X, **split_args)
-        tensor_y_train, tensor_y_test = equistore.split(y, **split_args)
+        tensor_y_train, tensor_y_test = equistore.split(
+            y,
+            axis="samples",
+            grouped_labels=[y[0].samples[idx_train], y[0].samples[idx_test]],
+        )
 
         # Forces
         f_train = tensor_y_train[0].gradient("positions").data.flatten()

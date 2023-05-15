@@ -1,7 +1,7 @@
 dataset = "dataset.xyz"
 recalc_descriptors = true
-recalc_power_spectrum = true
 output = "."
+batch_size = 5
 train_size = 0.9
 n_train_start = 5
 n_train_num = 10
