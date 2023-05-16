@@ -21,7 +21,7 @@ from .utils import PARAMETER_KEYS_DICT, compute_power_spectrum
 logger = logging.getLogger(__name__)
 
 
-def setup_dataset(filenames: List[List[ase.Atoms]], label: str, cell_length: float):
+def setup_dataset(filenames: List[List[ase.Atoms]], label: str, cell_length: float=None):
     """
     Read and process `ase.Atoms` from files, filter by label and set cell length.
 
@@ -64,9 +64,10 @@ def setup_dataset(filenames: List[List[ase.Atoms]], label: str, cell_length: flo
     elif label != "all":
         frames = [f for f in frames if f.info["label"].lower() == label.lower()]
 
-    for frame in frames:
-        frame.set_cell(cell_length * np.ones(3))
-        frame.pbc = True
+    if cell_length != -1:
+        for frame in frames:
+            frame.set_cell(cell_length * np.ones(3))
+            frame.pbc = True
 
     return frames
 
