@@ -81,7 +81,6 @@ def compute_descriptors(frames: List[ase.Atoms], config: dict):
                 sr_calculator = SoapPowerSpectrum(**config["sr_hypers"])
                 ts = sr_calculator.compute(**compute_args)
 
-            # Do structure sum
             ts = ts.keys_to_properties(["species_neighbor_1", "species_neighbor_2"])
             ts = ts.keys_to_samples(["species_center"])
 
@@ -97,7 +96,7 @@ def compute_descriptors(frames: List[ase.Atoms], config: dict):
             values=block.values,
             samples=Labels(["structure"], np.reshape(np.arange(len(frames)), (-1, 1))),
             components=block.components,
-            properties=block.properties
+            properties=block.properties,
         )
 
         gradient = ps_pre[0].gradient("positions")
@@ -115,7 +114,9 @@ def compute_descriptors(frames: List[ase.Atoms], config: dict):
         ps = equistore.io.load(os.path.join(config["output"], "descriptor_ps.npz"))
 
     # Compute structure calculator
-    co = AtomicComposition(per_structure=True).compute(**compute_args)
+    co_calculator = AtomicComposition(per_structure=True)
+    co_descriptor = co_calculator.compute(frames, gradients=["positions"])
+    co = co_descriptor.keys_to_properties(["species_center"])
 
     return co, ps
 
