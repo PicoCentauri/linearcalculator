@@ -21,7 +21,9 @@ from .utils import PARAMETER_KEYS_DICT, compute_power_spectrum
 logger = logging.getLogger(__name__)
 
 
-def setup_dataset(filenames: List[List[ase.Atoms]], label: str, cell_length: float=None):
+def setup_dataset(
+    filenames: List[List[ase.Atoms]], label: str, cell_length: float = None
+):
     """
     Read and process `ase.Atoms` from files, filter by label and set cell length.
 
@@ -351,6 +353,7 @@ def compute_linear_models(config):
 
             # Save data
             realization[key] = Bunch(
+                # model
                 alpha_values=alpha_values,
                 l_clf=l_clf,
                 best_idx=best_idx,
@@ -377,6 +380,10 @@ def compute_linear_models(config):
                 y_pred_train=l_y_pred_train[best_idx],
                 rmse_y_train=l_rmse_y_train[best_idx],
                 rmse_y_test=l_rmse_y_test[best_idx],
+                # auxiliary
+                sigma_energy=sigma_energy,
+                sigma_force=sigma_force,
+                sigma_force_mol=sigma_force_mol,
             )
 
     return results
