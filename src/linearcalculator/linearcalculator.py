@@ -1,3 +1,4 @@
+import itertools
 import logging
 import os
 import warnings
@@ -8,9 +9,14 @@ import equistore
 import numpy as np
 from equisolve.numpy.models import Ridge
 from equisolve.utils.convert import ase_to_tensormap
-from equistore import Labels
+from equistore import Labels, TensorBlock, TensorMap
 from numpy.linalg import LinAlgError
-from rascaline import AtomicComposition, LodeSphericalExpansion, SphericalExpansion
+from rascaline import (
+    AtomicComposition,
+    LodeSphericalExpansion,
+    SoapPowerSpectrum,
+    SphericalExpansion,
+)
 from sklearn.metrics import mean_squared_error
 from sklearn.utils import Bunch
 from tqdm.auto import tqdm
@@ -22,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 def setup_dataset(
-    filenames: List[List[ase.Atoms]], label: str, cell_length: float = None
+    filenames: List[List[ase.Atoms]], label: str, cell_length: float = -1
 ):
     """
     Read and process `ase.Atoms` from files, filter by label and set cell length.
@@ -74,69 +80,91 @@ def setup_dataset(
     return frames
 
 
-def compute_descriptors(frames, config):
-    # Compute descriptor
-    fname_sr_descriptor = os.path.join(config["output"], "sr_descriptor.npz")
-    fname_lr_descriptor = os.path.join(config["output"], "lr_descriptor.npz")
+def compute_descriptors(
+    frames: List[ase.Atoms],
+    config: dict,
+    potential_exponent: int = 0,
+    ps_fname: str="descriptor_ps.npz",
+):
+    """Compute atomic the composition and the power spectrum descriptor.
 
-    compute_args = {"systems": frames, "gradients": ["positions"]}
+    Parameters
+    ----------
+    frames : List[ase.Atoms]
+        A list of atomic systems represented as ASE Atoms objects.
+    config : dict
+        A dictionary containing the configuration parameters for descriptor computation.
+    potential_exponent : int
+        The potential exponent to taken for the LODE descriptor. If 0 only a classical
+        short-range SOAP model is calculated.
+    ps_fname : str
+        file name for saving the power spectrum.
+
+    Returns
+    -------
+    co : equistore.TensorMap
+        composition descriptor (co) representing the atomic composition of the
+        structures.
+    ps : equistore.TensorMap
+        power spectrum descriptor (ps) representing the rotationally invariant power
+        spectrum.
+    """
+
     if config["recalc_descriptors"]:
-        logger.info("Compute short-range descriptor")
-        sr_calculator = SphericalExpansion(**config["sr_hypers"])
-        sr_descriptor = sr_calculator.compute(**compute_args)
-        equistore.io.save(fname_sr_descriptor, sr_descriptor)
+        logger.info("Compute descriptors")
 
-        if config["lr_hypers"]["potential_exponent"] != 0:
-            logger.info("Compute long-range descriptor")
+        compute_args = {"systems": frames, "gradients": ["positions"]}
+
+        # Compute spherical expanions and power spectrum
+        if potential_exponent != 0:
+            sr_calculator = SphericalExpansion(**config["sr_hypers"])
+            sr_descriptor = sr_calculator.compute(**compute_args)
+
             lr_calculator = LodeSphericalExpansion(**config["lr_hypers"])
-            lr_descriptor = lr_calculator.compute(**compute_args)
-            equistore.io.save(fname_lr_descriptor, lr_descriptor)
-    else:
-        logger.info("Load short-range descriptor")
-        sr_descriptor = equistore.io.load(fname_sr_descriptor)
+            lr_descriptor = lr_calculator.compute(
+                potential_exponent=potential_exponent, **compute_args
+            )
 
-        if config["lr_hypers"]["potential_exponent"] != 0:
-            logger.info("Load long-range descriptor")
-            lr_descriptor = equistore.io.load(fname_lr_descriptor)
-
-    # Compute powerspectrum
-    fname_ps = "power_spectrum.npz"
-    if config["recalc_power_spectrum"]:
-        logger.info("Compute power spectrum")
-        if config["lr_hypers"]["potential_exponent"] == 0:
-            ts = compute_power_spectrum(sr_descriptor)
-            del sr_descriptor
-        else:
             ts = compute_power_spectrum(sr_descriptor, lr_descriptor)
+
             del lr_descriptor
             del sr_descriptor
+        else:
+            sr_calculator = SoapPowerSpectrum(**config["sr_hypers"])
+            ts = sr_calculator.compute(**compute_args)
 
         ts = ts.keys_to_samples(["species_center"])
-        ts = ts.keys_to_properties(
-            ["species_neighbor_1", "species_neighbor_2", "spherical_harmonics_l"]
-        )
-
-        # Sum over all center species per structure
+        ts = ts.keys_to_properties(["species_neighbor_1", "species_neighbor_2"])
         ps = equistore.sum_over_samples(ts, ["center", "species_center"])
         del ts
 
-        equistore.io.save(fname_ps, ps)
+        equistore.save(os.path.join(config["output"], ps_fname), ps)
     else:
-        logger.info("Load power spectrum")
-        ps = equistore.io.load(fname_ps)
+        logger.info("Load descriptors from file")
+        ps = equistore.load(os.path.join(config["output"], ps_fname))
 
     # Compute structure calculator
-    descriptor_co = AtomicComposition(per_structure=True).compute(**compute_args)
-    co = descriptor_co.keys_to_properties(["species_center"])
+    co_calculator = AtomicComposition(per_structure=True)
+    co_descriptor = co_calculator.compute(frames, gradients=["positions"])
+    co = co_descriptor.keys_to_properties(["species_center"])
 
-    return [co, ps]
+    return co, ps
 
 
 def compute_linear_models(config):
     frames = setup_dataset(config["dataset"], config["label"], config["cell_length"])
 
-    co, ps = compute_descriptors(frames, config)
-    X = equistore.join([co, ps], axis="properties")
+    potential_exponents = config["potential_exponents"]
+    if type(potential_exponents) == int:
+        potential_exponents = [potential_exponents]
+
+    ps = []
+    for i, potential_exponent in enumerate(potential_exponents):
+        ps_fname = f"descriptor_ps_{i}.npz"
+        co, ps_current = compute_descriptors(frames, config, potential_exponent, ps_fname)
+        ps.append(ps_current)
+
+    X = equistore.join([co] + ps, axis="properties")
 
     # Setup training curve
     results = Bunch()
@@ -162,19 +190,25 @@ def compute_linear_models(config):
 
         results[training_cutoff] = Bunch(idx_train=idx_train, idx_test=idx_test)
 
-    labels = Labels(["structure"], np.array([[0]]))
-
+    alpha_params = {"axis": "samples", "labels": Labels(["structure"], np.array([[0]]))}
     # Set composition calculator to machine precision
-    alpha_co = equistore.slice(equistore.ones_like(co), axis="samples", labels=labels)
+    alpha_co = equistore.slice(equistore.ones_like(co), **alpha_params)
     alpha_co *= np.finfo(alpha_co[0].values[0, 0]).eps
 
-    alpha_ps = equistore.slice(equistore.ones_like(ps), axis="samples", labels=labels)
+    alpha_ps = []
+    for i in range(len(potential_exponents)):
+        alpha_ps.append(equistore.slice(equistore.ones_like(ps[i]), **alpha_params))
 
     # Setup variables for model paramaters
     y = ase_to_tensormap(frames, energy="energy", forces="forces")
 
     monomer_energies = np.array([f.info["energyA"] + f.info["energyB"] for f in frames])
-    alpha_values = np.logspace(-12, 3, 20)
+
+    # Create combinations for gridsearch
+    alpha_values_single = np.logspace(-12, 3, config["n_alpha_values"])
+    alpha_values = list(
+        itertools.product(*(len(potential_exponents) * [alpha_values_single]))
+    )
 
     # Fit the models
     for realization in tqdm(results.values(), desc="fit models"):
@@ -199,8 +233,8 @@ def compute_linear_models(config):
         y_test_red -= monomer_energies[realization.idx_test]
 
         # Forces
-        f_train = y_train[0].gradient("positions").data
-        f_test = y_test[0].gradient("positions").data
+        f_train = y_train[0].gradient("positions").values
+        f_test = y_test[0].gradient("positions").values
 
         # Select mol_ids for predicting force per molecule
         mol_idx_train = []
@@ -250,25 +284,28 @@ def compute_linear_models(config):
             for i_alpha, alpha_value in enumerate(alpha_values):
                 clf = Ridge(parameter_keys=parameter_keys)
 
-                alpha_ps[0].values[:] = alpha_value
-                alpha = equistore.join([alpha_co, alpha_ps], axis="properties")
+                # Set alpha_value for each potential exponent
+                for i in range(len(potential_exponents)):
+                    alpha_ps[i][0].values[:] = alpha_value[i]
+
+                alpha = equistore.join([alpha_co] + alpha_ps, axis="properties")
 
                 try:
                     with warnings.catch_warnings(record=True) as warns:
                         clf.fit(X_train, y_train, alpha=alpha)
                         for w in warns:
-                            logger.warn(f"{alpha_value:.1e}, {key}: {w.message}")
+                            logger.warn(f"{alpha_value}, {key}: {w.message}")
 
                 except LinAlgError as e:
-                    logger.warn(f"{alpha_value:.1e}, {key}: {e}")
+                    logger.warn(f"{alpha_value}, {key}: {e}")
 
                 # Predict values and gradients
                 pred_train = clf.predict(X_train)[0]
                 pred_test = clf.predict(X_test)[0]
 
                 # Compute gradient RMSE
-                f_pred_train = pred_train.gradient("positions").data
-                f_pred_test = pred_test.gradient("positions").data
+                f_pred_train = pred_train.gradient("positions").values
+                f_pred_test = pred_test.gradient("positions").values
 
                 rmse_f_train = mean_squared_error(
                     f_pred_train.flatten(),

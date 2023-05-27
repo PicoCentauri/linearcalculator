@@ -2,9 +2,10 @@ dataset = "dataset.xyz"
 cell_length = 50
 label = "!cc"  # no label cc
 recalc_descriptors = true
-recalc_power_spectrum = true
 output = "."
 training_cutoffs = [ 1, 2, 3, 4, 5, 6, 7, 8 ]
+potential_exponents = 1
+n_alpha_values = 10
 
 [sr_hypers]
 cutoff = 3.0
@@ -22,4 +23,3 @@ max_angular = 1
 atomic_gaussian_width = 1.0
 center_atom_weight = 1.0
 radial_basis = { Gto = {} }
-potential_exponent = 1

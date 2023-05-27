@@ -18,7 +18,7 @@ _log_dt_fmt = "%Y-%m-%d %H:%M:%S"
 _log_fmt = "[{asctime}] [{levelname}] {name}: {message}"
 logging.basicConfig(format=_log_fmt, datefmt=_log_dt_fmt, style="{", level=logging.INFO)
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 
 @contextlib.contextmanager
@@ -80,7 +80,8 @@ def main():
         "--plot",
         dest="plot",
         action="store_true",
-        help="Plot and save regulerizer curves",
+        help="Plot and save regulerizer curves. Only works if potential_exponents has "
+        "only one entry.",
     )
     parser.add_argument(
         "-c",
@@ -99,8 +100,15 @@ def main():
         results = compute_linear_models(config)
 
         if args.plot:
-            for name, realization in results.items():
-                plot_realization(realization, fname=f"{config['output']}/{name}.png")
+            if len(config["potential_exponents"] > 1):
+                logger.error(
+                    "Plots requested but more than one potential_exponent given."
+                )
+            else:
+                for name, realization in results.items():
+                    plot_realization(
+                        realization, fname=f"{config['output']}/{name}.png"
+                    )
 
         results.config = config
 
