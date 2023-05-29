@@ -100,7 +100,10 @@ def main():
         results = compute_linear_models(config)
 
         if args.plot:
-            if len(config["potential_exponents"] > 1):
+            if (
+                type(config["potential_exponents"]) == list
+                and len(config["potential_exponents"]) > 1
+            ):
                 logger.error(
                     "Plots requested but more than one potential_exponent given."
                 )
