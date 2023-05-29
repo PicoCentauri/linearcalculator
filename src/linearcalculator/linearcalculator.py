@@ -84,7 +84,7 @@ def compute_descriptors(
     frames: List[ase.Atoms],
     config: dict,
     potential_exponent: int = 0,
-    ps_fname: str="descriptor_ps.npz",
+    ps_fname: str = "descriptor_ps.npz",
 ):
     """Compute atomic the composition and the power spectrum descriptor.
 
@@ -120,10 +120,10 @@ def compute_descriptors(
             sr_calculator = SphericalExpansion(**config["sr_hypers"])
             sr_descriptor = sr_calculator.compute(**compute_args)
 
-            lr_calculator = LodeSphericalExpansion(**config["lr_hypers"])
-            lr_descriptor = lr_calculator.compute(
-                potential_exponent=potential_exponent, **compute_args
+            lr_calculator = LodeSphericalExpansion(
+                potential_exponent=potential_exponent, **config["lr_hypers"]
             )
+            lr_descriptor = lr_calculator.compute(**compute_args)
 
             ts = compute_power_spectrum(sr_descriptor, lr_descriptor)
 
@@ -161,7 +161,9 @@ def compute_linear_models(config):
     ps = []
     for i, potential_exponent in enumerate(potential_exponents):
         ps_fname = f"descriptor_ps_{i}.npz"
-        co, ps_current = compute_descriptors(frames, config, potential_exponent, ps_fname)
+        co, ps_current = compute_descriptors(
+            frames, config, potential_exponent, ps_fname
+        )
         ps.append(ps_current)
 
     X = equistore.join([co] + ps, axis="properties")
