@@ -9,7 +9,7 @@ import equistore
 import numpy as np
 from equisolve.numpy.models import Ridge
 from equisolve.utils.convert import ase_to_tensormap
-from equistore import Labels, TensorBlock, TensorMap
+from equistore import Labels
 from numpy.linalg import LinAlgError
 from rascaline import (
     AtomicComposition,

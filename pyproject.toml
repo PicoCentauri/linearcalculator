@@ -24,8 +24,8 @@ dynamic = ["version"]
 dependencies = [
     "ase",
     "matplotlib",
-    "equisolve @ https://github.com/lab-cosmo/equisolve/archive/main.zip",
-    #"rascaline @ https://github.com/luthaf/rascaline/archive/equisolve.zip",
+    "equisolve@https://github.com/lab-cosmo/equisolve/archive/main.zip",
+    #"rascaline@https://github.com/luthaf/rascaline/archive/equisolve.zip",
     "scikit-learn",
     "tomli",
     "tqdm",
