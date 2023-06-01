@@ -84,6 +84,7 @@ def compute_descriptors(
     frames: List[ase.Atoms],
     config: dict,
     potential_exponent: int = 0,
+    gradients: List[str] = ["positions"],
     ps_fname: str = "descriptor_ps.npz",
 ):
     """Compute atomic the composition and the power spectrum descriptor.
@@ -110,10 +111,10 @@ def compute_descriptors(
         spectrum.
     """
 
+    compute_args = {"systems": frames, "gradients": gradients}
+
     if config["recalc_descriptors"]:
         logger.info("Compute descriptors")
-
-        compute_args = {"systems": frames, "gradients": ["positions"]}
 
         # Compute spherical expanions and power spectrum
         if potential_exponent != 0:
@@ -145,7 +146,7 @@ def compute_descriptors(
 
     # Compute structure calculator
     co_calculator = AtomicComposition(per_structure=True)
-    co_descriptor = co_calculator.compute(frames, gradients=["positions"])
+    co_descriptor = co_calculator.compute(**compute_args)
     co = co_descriptor.keys_to_properties(["species_center"])
 
     return co, ps
@@ -162,7 +163,10 @@ def compute_linear_models(config):
     for i, potential_exponent in enumerate(potential_exponents):
         ps_fname = f"descriptor_ps_{i}.npz"
         co, ps_current = compute_descriptors(
-            frames, config, potential_exponent, ps_fname
+            frames=frames,
+            config=config,
+            potential_exponent=potential_exponent,
+            ps_fname=ps_fname,
         )
         ps.append(ps_current)
 
