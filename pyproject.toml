@@ -28,6 +28,7 @@ dependencies = [
     #"rascaline@https://github.com/luthaf/rascaline/archive/equisolve.zip",
     "scikit-learn",
     "tomli",
+    "torch",
     "tqdm",
 ]
 

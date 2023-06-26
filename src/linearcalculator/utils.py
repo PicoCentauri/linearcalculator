@@ -1,8 +1,18 @@
 from math import sqrt
+from typing import List
 
+import ase.io
 import matplotlib.pyplot as plt
 import numpy as np
 from equistore import Labels, TensorBlock, TensorMap, slice_block
+from rascaline import (
+    AtomicComposition,
+    LodeSphericalExpansion,
+    SoapPowerSpectrum,
+    SphericalExpansion,
+)
+
+import equistore
 
 
 PARAMETER_KEYS_DICT = {"e": ["values"], "e_f": ["values", "positions"]}
@@ -279,3 +289,128 @@ def plot_realization(realization, fname):
 
     if fname is not None:
         fig.savefig(fname, bbox_inches="tight")
+
+
+def setup_dataset(
+    filenames: List[List[ase.Atoms]], label: str, cell_length: float = -1
+):
+    """
+    Read and process `ase.Atoms` from files, filter by label and set cell length.
+
+    Read the given list of ASE Atoms objects from the provided filenames. If filenames
+    is a single object instead of a list, it will be converted to a list.
+
+    If label is provided, return only the atoms objects with info["label"] == label. If
+    label is "all", return all the atoms objects.
+
+    Set the cell length of all atoms objects to `cell_length` and enable periodic
+    boundary conditions.
+
+    Parameters:
+    -----------
+    filenames: list of `ase.Atoms` objects
+        List of ASE Atoms objects to read from.
+    label: str
+        The label to match with info["label"] to select specific Atoms objects. If
+        "all", returns all the Atoms objects.
+    cell_length: float
+        The length of the cell for all Atoms objects.
+
+    Returns:
+    --------
+    frames: list of `ase.Atoms` objects
+        The list of ASE Atoms objects that match the given label (or all Atoms objects
+        if label="all"). The cell length and periodic boundary conditions are set for
+        all returned Atoms objects.
+    """
+    if type(filenames) not in [list, tuple]:
+        filenames = [filenames]
+
+    frames = []
+    for filename in filenames:
+        frames += ase.io.read(filename, ":")
+
+    label = label.lower()
+    if label[0] == "!":
+        frames = [f for f in frames if f.info["label"].lower() != label[1:]]
+    elif label != "all":
+        frames = [f for f in frames if f.info["label"].lower() == label.lower()]
+
+    if cell_length != -1:
+        for frame in frames:
+            frame.set_cell(cell_length * np.ones(3))
+            frame.pbc = True
+
+    return frames
+
+
+def compute_descriptors(
+    frames: List[ase.Atoms],
+    config: dict,
+    potential_exponent: int = 0,
+    gradients: List[str] = ["positions"],
+    ps_fname: str = "descriptor_ps.npz",
+):
+    """Compute atomic the composition and the power spectrum descriptor.
+
+    Parameters
+    ----------
+    frames : List[ase.Atoms]
+        A list of atomic systems represented as ASE Atoms objects.
+    config : dict
+        A dictionary containing the configuration parameters for descriptor computation.
+    potential_exponent : int
+        The potential exponent to taken for the LODE descriptor. If 0 only a classical
+        short-range SOAP model is calculated.
+    ps_fname : str
+        file name for saving the power spectrum.
+
+    Returns
+    -------
+    co : equistore.TensorMap
+        composition descriptor (co) representing the atomic composition of the
+        structures.
+    ps : equistore.TensorMap
+        power spectrum descriptor (ps) representing the rotationally invariant power
+        spectrum.
+    """
+
+    compute_args = {"systems": frames, "gradients": gradients}
+
+    if config["recalc_descriptors"]:
+        logger.info("Compute descriptors")
+
+        # Compute spherical expanions and power spectrum
+        if potential_exponent != 0:
+            sr_calculator = SphericalExpansion(**config["sr_hypers"])
+            sr_descriptor = sr_calculator.compute(**compute_args)
+
+            lr_calculator = LodeSphericalExpansion(
+                potential_exponent=potential_exponent, **config["lr_hypers"]
+            )
+            lr_descriptor = lr_calculator.compute(**compute_args)
+
+            ts = compute_power_spectrum(sr_descriptor, lr_descriptor)
+
+            del lr_descriptor
+            del sr_descriptor
+        else:
+            sr_calculator = SoapPowerSpectrum(**config["sr_hypers"])
+            ts = sr_calculator.compute(**compute_args)
+
+        ts = ts.keys_to_samples(["species_center"])
+        ts = ts.keys_to_properties(["species_neighbor_1", "species_neighbor_2"])
+        ps = equistore.sum_over_samples(ts, ["center", "species_center"])
+        del ts
+
+        equistore.save(os.path.join(config["output"], ps_fname), ps)
+    else:
+        logger.info("Load descriptors from file")
+        ps = equistore.load(os.path.join(config["output"], ps_fname))
+
+    # Compute structure calculator
+    co_calculator = AtomicComposition(per_structure=True)
+    co_descriptor = co_calculator.compute(**compute_args)
+    co = co_descriptor.keys_to_properties(["species_center"])
+
+    return co, ps

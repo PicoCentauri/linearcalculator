@@ -1,3 +1,4 @@
+model = "linear"
 dataset = "dataset.xyz"
 cell_length = 50
 label = "!cc"  # no label cc
