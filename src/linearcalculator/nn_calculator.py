@@ -91,8 +91,8 @@ def compute_nn_models(config):
         y_train = torch.from_numpy(y_train)
         y_test = torch.from_numpy(y_test)
 
-        y_train_red = torch.from_numpy(y_train)
-        y_test_red = torch.from_numpy(y_test)
+        # y_train_red = torch.from_numpy(y_train)
+        # y_test_red = torch.from_numpy(y_test)
 
         sigma_energy = torch.std(y_train_red)
 
