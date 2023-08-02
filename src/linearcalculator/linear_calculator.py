@@ -134,7 +134,15 @@ def compute_linear_models(config):
         sigma_force = np.std(f_train)
         sigma_force_mol = np.std(f_train_mol)
 
-        for key, parameter_keys in PARAMETER_KEYS_DICT.items():
+        for key, _ in PARAMETER_KEYS_DICT.items():
+
+            if key == "e":
+                X_train_cur = equistore.remove_gradients(X_train)
+                y_train_cur = equistore.remove_gradients(y_train)
+            else:
+                X_train_cur = X_train.copy()
+                y_train_cur = y_train.copy()
+
             # Create lists for storing values
             l_clf = len(alpha_values) * [None]
 
@@ -154,7 +162,7 @@ def compute_linear_models(config):
             l_rmse_y_test = np.nan * np.ones(len(alpha_values))
 
             for i_alpha, alpha_value in enumerate(alpha_values):
-                clf = Ridge(parameter_keys=parameter_keys)
+                clf = Ridge()
 
                 # Set alpha_value for each potential exponent
                 for i in range(len(potential_exponents)):
@@ -162,9 +170,14 @@ def compute_linear_models(config):
 
                 alpha = equistore.join([alpha_co] + alpha_ps, axis="properties")
 
+                if key == "e":
+                    alpha_cur = equistore.remove_gradients(alpha)
+                else:
+                    alpha_cur = alpha.copy()
+
                 try:
                     with warnings.catch_warnings(record=True) as warns:
-                        clf.fit(X_train, y_train, alpha=alpha)
+                        clf.fit(X_train_cur, y_train_cur, alpha=alpha_cur)
                         for w in warns:
                             logger.warn(f"{alpha_value}, {key}: {w.message}")
 
