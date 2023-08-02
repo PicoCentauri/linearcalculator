@@ -10,7 +10,7 @@ from logging.handlers import TimedRotatingFileHandler
 
 import tomli
 
-from linearcalculator import __version__, compute_linear_models, compute_nn_models
+from linearcalculator import __version__, compute_linear_models
 from linearcalculator.utils import plot_realization
 
 
@@ -96,15 +96,7 @@ def main():
     with setup_logging(logfile=args.logfile, debug=args.debug):
         with open(os.path.realpath(args.config_file), "rb") as f:
             config = tomli.load(f)
-
-        model = config.pop("model").lower()
-
-        if model == "linear":
             results = compute_linear_models(config)
-        elif model == "nn":
-            results = compute_nn_models(config)
-        else:
-            raise ValueError("Only 'linear' or 'nn' are support models!")
 
         if args.plot:
             if (
