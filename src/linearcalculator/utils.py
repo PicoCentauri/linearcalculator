@@ -235,7 +235,6 @@ def compute_descriptors(
         ts = calculator.compute(**compute_args)
 
         ts = ts.keys_to_samples(["species_center"])
-        ts = ts.keys_to_properties(["species_neighbor_1", "species_neighbor_2"])
         ps = equistore.sum_over_samples(ts, ["center", "species_center"])
         del ts
 

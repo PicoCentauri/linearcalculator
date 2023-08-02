@@ -25,7 +25,7 @@ dependencies = [
     "ase",
     "matplotlib",
     "equisolve@https://github.com/lab-cosmo/equisolve/archive/main.zip",
-    #"rascaline@https://github.com/luthaf/rascaline/archive/equisolve.zip",
+    #"rascaline@https://github.com/luthaf/rascaline/archive/master.zip",
     "scikit-learn",
     "tomli",
     "torch",
