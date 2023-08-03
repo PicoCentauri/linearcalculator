@@ -6,7 +6,12 @@ import ase.io
 import equistore
 import matplotlib.pyplot as plt
 import numpy as np
-from rascaline import AtomicComposition, LodeSphericalExpansion, SphericalExpansion
+from rascaline import (
+    AtomicComposition,
+    LodeSphericalExpansion,
+    SoapPowerSpectrum,
+    SphericalExpansion,
+)
 from rascaline.utils import PowerSpectrum
 
 from .radial_basis import RadialBasis
@@ -188,10 +193,9 @@ def compute_descriptors(
     compute_args = {"systems": frames, "gradients": gradients}
 
     if config["recalc_descriptors"]:
-        logger.info("Compute descriptors")
+        logger.info(f"Compute descriptors for potential_exponent={potential_exponent}.")
 
         # Compute spherical expanions and power spectrum
-        sr_calculator = SphericalExpansion(**config["sr_hypers"])
         if potential_exponent != 0:
             lr_hypers = config["lr_hypers"]
             radial_basis = list(lr_hypers["radial_basis"].keys())[0]
@@ -225,16 +229,20 @@ def compute_descriptors(
                     }
                 }
 
+            sr_calculator = SphericalExpansion(**config["sr_hypers"])
             lr_calculator = LodeSphericalExpansion(
                 potential_exponent=potential_exponent, **lr_hypers
             )
             calculator = PowerSpectrum(sr_calculator, lr_calculator)
         else:
-            calculator = PowerSpectrum(sr_calculator)
+            calculator = SoapPowerSpectrum(**config["soap_hypers"])
 
         ts = calculator.compute(**compute_args)
+        ts = ts.keys_to_samples("species_center")
 
-        ts = ts.keys_to_samples(["species_center"])
+        if potential_exponent == 0:
+            ts = ts.keys_to_properties(["species_neighbor_1", "species_neighbor_2"])
+
         ps = equistore.sum_over_samples(ts, ["center", "species_center"])
         del ts
 
@@ -246,6 +254,6 @@ def compute_descriptors(
     # Compute structure calculator
     co_calculator = AtomicComposition(per_structure=True)
     co_descriptor = co_calculator.compute(**compute_args)
-    co = co_descriptor.keys_to_properties(["species_center"])
+    co = co_descriptor.keys_to_properties("species_center")
 
     return co, ps

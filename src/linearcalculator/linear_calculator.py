@@ -135,7 +135,6 @@ def compute_linear_models(config):
         sigma_force_mol = np.std(f_train_mol)
 
         for key, _ in PARAMETER_KEYS_DICT.items():
-
             if key == "e":
                 X_train_cur = equistore.remove_gradients(X_train)
                 y_train_cur = equistore.remove_gradients(y_train)
