@@ -12,7 +12,7 @@ from sklearn.metrics import mean_squared_error
 from sklearn.utils import Bunch
 from tqdm.auto import tqdm
 
-from .utils import PARAMETER_KEYS_DICT, compute_descriptors, setup_dataset
+from .utils import compute_descriptors, setup_dataset
 
 
 logger = logging.getLogger(__name__)
@@ -26,12 +26,21 @@ def compute_linear_models(config):
         potential_exponents = [potential_exponents]
 
     ps = []
+    parameter_keys = ["e"]
+
+    if config["forces"]:
+        gradients = ["positions"]
+        parameter_keys.append("e_f")
+    else:
+        gradients = None
+
     for i, potential_exponent in enumerate(potential_exponents):
         ps_fname = f"descriptor_ps_{i}.npz"
         co, ps_current = compute_descriptors(
             frames=frames,
             config=config,
             potential_exponent=potential_exponent,
+            gradients=gradients,
             ps_fname=ps_fname,
         )
         ps.append(ps_current)
@@ -134,7 +143,7 @@ def compute_linear_models(config):
         sigma_force = np.std(f_train)
         sigma_force_mol = np.std(f_train_mol)
 
-        for key, _ in PARAMETER_KEYS_DICT.items():
+        for key in parameter_keys:
             if key == "e":
                 X_train_cur = equistore.remove_gradients(X_train)
                 y_train_cur = equistore.remove_gradients(y_train)
@@ -188,44 +197,55 @@ def compute_linear_models(config):
                 pred_test = clf.predict(X_test)[0]
 
                 # Compute gradient RMSE
-                f_pred_train = pred_train.gradient("positions").values
-                f_pred_test = pred_test.gradient("positions").values
+                if config["forces"]:
+                    f_pred_train = pred_train.gradient("positions").values
+                    f_pred_test = pred_test.gradient("positions").values
 
-                rmse_f_train = mean_squared_error(
-                    f_pred_train.flatten(),
-                    f_train.flatten(),
-                    squared=False,
-                )
-                rmse_f_test = mean_squared_error(
-                    f_pred_test.flatten(),
-                    f_test.flatten(),
-                    squared=False,
-                )
+                    rmse_f_train = mean_squared_error(
+                        f_pred_train.flatten(),
+                        f_train.flatten(),
+                        squared=False,
+                    )
+                    rmse_f_test = mean_squared_error(
+                        f_pred_test.flatten(),
+                        f_test.flatten(),
+                        squared=False,
+                    )
 
-                # Compute gradient per molecules RMSE
-                f_pred_train_mol = np.array(
-                    [
-                        np.sum(m, axis=0)
-                        for m in np.split(f_pred_train, mol_idx_train_cumsum)
-                    ]
-                )
-                f_pred_test_mol = np.array(
-                    [
-                        np.sum(m, axis=0)
-                        for m in np.split(f_pred_test, mol_idx_test_cumsum)
-                    ]
-                )
+                    # Compute gradient per molecules RMSE
+                    f_pred_train_mol = np.array(
+                        [
+                            np.sum(m, axis=0)
+                            for m in np.split(f_pred_train, mol_idx_train_cumsum)
+                        ]
+                    )
+                    f_pred_test_mol = np.array(
+                        [
+                            np.sum(m, axis=0)
+                            for m in np.split(f_pred_test, mol_idx_test_cumsum)
+                        ]
+                    )
 
-                rmse_f_train_mol = mean_squared_error(
-                    f_pred_train_mol.flatten(),
-                    f_train_mol.flatten(),
-                    squared=False,
-                )
-                rmse_f_test_mol = mean_squared_error(
-                    f_pred_test_mol.flatten(),
-                    f_test_mol.flatten(),
-                    squared=False,
-                )
+                    rmse_f_train_mol = mean_squared_error(
+                        f_pred_train_mol.flatten(),
+                        f_train_mol.flatten(),
+                        squared=False,
+                    )
+                    rmse_f_test_mol = mean_squared_error(
+                        f_pred_test_mol.flatten(),
+                        f_test_mol.flatten(),
+                        squared=False,
+                    )
+
+                    l_f_pred_train[i_alpha] = f_pred_train
+                    l_f_pred_test[i_alpha] = f_pred_test
+                    l_rmse_f_test[i_alpha] = rmse_f_test
+                    l_rmse_f_train[i_alpha] = rmse_f_train
+
+                    l_f_pred_train_mol[i_alpha] = f_pred_train_mol
+                    l_f_pred_test_mol[i_alpha] = f_pred_test_mol
+                    l_rmse_f_test_mol[i_alpha] = rmse_f_test_mol
+                    l_rmse_f_train_mol[i_alpha] = rmse_f_train_mol
 
                 # Compute energy RMSE
                 y_pred_train = pred_train.values.flatten()
@@ -242,26 +262,17 @@ def compute_linear_models(config):
                 # Store predictions
                 l_clf[i_alpha] = clf
 
-                l_f_pred_train[i_alpha] = f_pred_train
-                l_f_pred_test[i_alpha] = f_pred_test
-                l_rmse_f_test[i_alpha] = rmse_f_test
-                l_rmse_f_train[i_alpha] = rmse_f_train
-
-                l_f_pred_train_mol[i_alpha] = f_pred_train_mol
-                l_f_pred_test_mol[i_alpha] = f_pred_test_mol
-                l_rmse_f_test_mol[i_alpha] = rmse_f_test_mol
-                l_rmse_f_train_mol[i_alpha] = rmse_f_train_mol
-
                 l_y_pred_train[i_alpha] = y_pred_train
                 l_y_pred_test[i_alpha] = y_pred_test
                 l_rmse_y_train[i_alpha] = rmse_y_train
                 l_rmse_y_test[i_alpha] = rmse_y_test
 
-            l_rmse_f_train *= 100 / sigma_force
-            l_rmse_f_test *= 100 / sigma_force
+            if config["forces"]:
+                l_rmse_f_train *= 100 / sigma_force
+                l_rmse_f_test *= 100 / sigma_force
 
-            l_rmse_f_train_mol *= 100 / sigma_force_mol
-            l_rmse_f_test_mol *= 100 / sigma_force_mol
+                l_rmse_f_train_mol *= 100 / sigma_force_mol
+                l_rmse_f_test_mol *= 100 / sigma_force_mol
 
             l_rmse_y_train *= 100 / sigma_energy
             l_rmse_y_test *= 100 / sigma_energy
@@ -269,8 +280,10 @@ def compute_linear_models(config):
             # Find index of best model
             if key == "e_f":
                 best_idx = np.nanargmin((l_rmse_y_test + l_rmse_f_test) / 2)
-            else:
+            elif key == "e" and config["forces"]:
                 best_idx = np.nanargmin((l_rmse_y_test + l_rmse_f_test_mol) / 2)
+            else:
+                best_idx = np.nanargmin(l_rmse_y_test)
 
             # Save data
             realization[key] = Bunch(
@@ -280,20 +293,6 @@ def compute_linear_models(config):
                 best_idx=best_idx,
                 clf=l_clf[best_idx],
                 alpha=alpha_values[best_idx],
-                # gradients
-                l_rmse_f_train=l_rmse_f_train,
-                l_rmse_f_test=l_rmse_f_test,
-                f_pred_test=l_f_pred_test[best_idx],
-                f_pred_train=l_f_pred_train[best_idx],
-                rmse_f_train=l_rmse_f_train[best_idx],
-                rmse_f_test=l_rmse_f_test[best_idx],
-                # gradients per molecule
-                l_rmse_f_train_mol=l_rmse_f_train_mol,
-                l_rmse_f_test_mol=l_rmse_f_test_mol,
-                f_pred_test_mol=l_f_pred_test_mol[best_idx],
-                f_pred_train_mol=l_f_pred_train_mol[best_idx],
-                rmse_f_train_mol=l_rmse_f_train_mol[best_idx],
-                rmse_f_test_mol=l_rmse_f_test_mol[best_idx],
                 # values
                 l_rmse_y_train=l_rmse_y_train,
                 l_rmse_y_test=l_rmse_y_test,
@@ -306,5 +305,21 @@ def compute_linear_models(config):
                 sigma_force=sigma_force,
                 sigma_force_mol=sigma_force_mol,
             )
+
+            if config["forces"]:
+                # gradients
+                realization[key].l_rmse_f_train = l_rmse_f_train
+                realization[key].l_rmse_f_test = l_rmse_f_test
+                realization[key].f_pred_test = l_f_pred_test[best_idx]
+                realization[key].f_pred_train = l_f_pred_train[best_idx]
+                realization[key].rmse_f_train = l_rmse_f_train[best_idx]
+                realization[key].rmse_f_test = l_rmse_f_test[best_idx]
+                # gradients per molecule
+                realization[key].l_rmse_f_train_mol = l_rmse_f_train_mol
+                realization[key].l_rmse_f_test_mol = l_rmse_f_test_mol
+                realization[key].f_pred_test_mol = l_f_pred_test_mol[best_idx]
+                realization[key].f_pred_train_mol = l_f_pred_train_mol[best_idx]
+                realization[key].rmse_f_train_mol = l_rmse_f_train_mol[best_idx]
+                realization[key].rmse_f_test_mol = l_rmse_f_test_mol[best_idx]
 
     return results

@@ -19,92 +19,6 @@ from .radial_basis import KspaceRadialBasis
 
 logger = logging.getLogger(__name__)
 
-PARAMETER_KEYS_DICT = {"e": ["values"], "e_f": ["values", "positions"]}
-
-
-def plot_realization(realization, fname):
-    tab10 = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-
-    fig, ax = plt.subplots(
-        ncols=2,
-        figsize=(12, 4),
-        constrained_layout=True,
-        sharey=True,
-        sharex=True,
-    )
-
-    for i, key in enumerate(PARAMETER_KEYS_DICT.keys()):
-        b = realization[key]
-        color = tab10[i]
-
-        # Energy subplot
-        ax[0].plot(
-            b.alpha_values,
-            b.l_rmse_y_train,
-            label=f"{key}: train, rmse_y_min = {b.rmse_y_train:.1e}",
-            c=color,
-            ls=":",
-        )
-
-        ax[0].plot(
-            b.alpha_values,
-            b.l_rmse_y_test,
-            label=f"{key}: test, rmse_y_min = {b.rmse_y_test:.1e}",
-            c=color,
-        )
-
-        ax[0].scatter(
-            2 * [b.alpha],
-            [b.rmse_y_train, b.rmse_y_test],
-            c=color,
-        )
-
-        # Force subplot
-        # For energy models (key=="e") we use the force per molecule
-        if key == "e":
-            l_rmse_f_train = b.l_rmse_f_train_mol
-            l_rmse_f_test = b.l_rmse_f_test_mol
-            rmse_f_train = b.rmse_f_train_mol
-            rmse_f_test = b.rmse_f_test_mol
-        else:
-            l_rmse_f_train = b.l_rmse_f_train
-            l_rmse_f_test = b.l_rmse_f_test
-            rmse_f_train = b.rmse_f_train
-            rmse_f_test = b.rmse_f_test
-
-        ax[1].plot(
-            b.alpha_values,
-            l_rmse_f_train,
-            label=f"{key}: train, RMSE_f_min = {b.rmse_f_train:.1e}",
-            c=color,
-            ls=":",
-        )
-
-        ax[1].plot(
-            b.alpha_values,
-            l_rmse_f_test,
-            label=f"{key}: test, RMSE_f_min = {b.rmse_f_test:.1e}",
-            c=color,
-        )
-
-        ax[1].scatter(
-            2 * [b.alpha],
-            [rmse_f_train, rmse_f_test],
-            c=color,
-            label=f"α_opt={b.alpha:.1e}",
-        )
-
-    for a in ax:
-        a.axhline(1e2, c="gray", ls="dashed", zorder=-5)
-        a.legend()
-        a.set(xscale="log", yscale="log", xlabel="α")
-
-    ax[0].set_ylabel(r"% $RMSE_\mathrm{energy}$")
-    ax[1].set_ylabel(r"% $RMSE_\mathrm{force}$")
-
-    if fname is not None:
-        fig.savefig(fname, bbox_inches="tight")
-
 
 def setup_dataset(
     filenames: List[List[ase.Atoms]], label: str, cell_length: float = -1
@@ -234,7 +148,7 @@ def compute_descriptors(
                 potential_exponent=potential_exponent, **lr_hypers
             )
             calculator = PowerSpectrum(sr_calculator, lr_calculator)
-            ts = calculator.compute(**compute_args, fill_species_neighbor=True)
+            ts = calculator.compute(**compute_args)
         else:
             calculator = SoapPowerSpectrum(**config["soap_hypers"])
             ts = calculator.compute(**compute_args)
