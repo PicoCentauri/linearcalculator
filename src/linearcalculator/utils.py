@@ -14,7 +14,7 @@ from rascaline import (
 )
 from rascaline.utils import PowerSpectrum
 
-from .radial_basis import RadialBasis
+from .radial_basis import KspaceRadialBasis
 
 
 logger = logging.getLogger(__name__)
@@ -207,7 +207,7 @@ def compute_descriptors(
                 else:
                     orthonormalization_radius = lr_hypers["cutoff"]
 
-                rad = RadialBasis(
+                rad = KspaceRadialBasis(
                     radial_basis,
                     max_radial=lr_hypers["max_radial"],
                     max_angular=lr_hypers["max_angular"],
@@ -234,10 +234,11 @@ def compute_descriptors(
                 potential_exponent=potential_exponent, **lr_hypers
             )
             calculator = PowerSpectrum(sr_calculator, lr_calculator)
+            ts = calculator.compute(**compute_args, fill_species_neighbor=True)
         else:
             calculator = SoapPowerSpectrum(**config["soap_hypers"])
+            ts = calculator.compute(**compute_args)
 
-        ts = calculator.compute(**compute_args)
         ts = ts.keys_to_samples("species_center")
 
         if potential_exponent == 0:

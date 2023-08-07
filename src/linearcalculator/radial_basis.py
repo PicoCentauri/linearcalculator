@@ -1,7 +1,9 @@
+from abc import ABC, abstractmethod
+
 import numpy as np
 from rascaline import generate_splines
 from scipy.optimize import fsolve
-from scipy.special import spherical_jn
+from scipy.special import spherical_in, spherical_jn
 
 
 def innerprod(xx, yy1, yy2):
@@ -18,7 +20,7 @@ def innerprod(xx, yy1, yy2):
     return (integrand[0] / 2 + integrand[-1] / 2 + np.sum(integrand[1:-1])) * dx
 
 
-class RadialBasis:
+class RadialBasis(ABC):
     """
     Class for precomputing and storing all results related to the radial basis.
 
@@ -266,6 +268,42 @@ class RadialBasis:
         self.weights[0] = self.weights[-1] = 1 / 3
         self.weights *= dx
 
+    @abstractmethod
+    def _radial_integral(self, n, l, k, derivative):
+        """
+        Custom function adapted to the "generate_splines" function
+        in rascaline to compute the radial integrals
+
+        INPUTS:
+        n : int
+            index of radial channel
+        l : int
+            index of angular channel
+        k : float, np.ndarray
+            k-vector
+        """
+        ...
+
+    def spline_points(self, cutoff_radius, requested_accuracy=1e-8):
+        def radial_basis(n, l, k):
+            return self._radial_integral(n, l, k, derivative=False)
+
+        def radial_basis_derivatives(n, l, k):
+            return self._radial_integral(n, l, k, derivative=True)
+
+        return generate_splines(
+            radial_basis=radial_basis,
+            radial_basis_derivatives=radial_basis_derivatives,
+            max_radial=self.max_radial,
+            max_angular=self.max_angular,
+            cutoff_radius=cutoff_radius,
+            requested_accuracy=requested_accuracy,
+        )
+
+
+class KspaceRadialBasis(RadialBasis):
+    """k/fourier space version for the radial integral."""
+
     def _radial_integral(self, n, l, k, derivative):
         """
         Custom function adapted to the "generate_splines" function
@@ -308,18 +346,83 @@ class RadialBasis:
 
         return np.sum(self.weights * integrand, axis=1)
 
-    def spline_points(self, cutoff_radius, requested_accuracy=1e-8):
-        def radial_basis(n, l, k):
-            return self._radial_integral(n, l, k, derivative=False)
 
-        def radial_basis_derivatives(n, l, k):
-            return self._radial_integral(n, l, k, derivative=True)
+class RspaceRadialBasis(RadialBasis):
+    """real space version for the radial integral."""
 
-        return generate_splines(
+    def __init__(
+        self,
+        radial_basis,
+        max_angular,
+        max_radial,
+        atomic_gaussian_width,
+        projection_radius,
+        orthonormalization_radius=None,
+        basis_parameters=None,
+    ):
+        self.atomic_gaussian_width = atomic_gaussian_width
+        super().__init__(
             radial_basis=radial_basis,
-            radial_basis_derivatives=radial_basis_derivatives,
-            max_radial=self.max_radial,
-            max_angular=self.max_angular,
-            cutoff_radius=cutoff_radius,
-            requested_accuracy=requested_accuracy,
+            max_radial=max_radial,
+            max_angular=max_angular,
+            projection_radius=projection_radius,
+            orthonormalization_radius=orthonormalization_radius,
+            basis_parameters=basis_parameters,
         )
+
+    def _radial_integral(self, n, l, rij, derivative):
+        """
+        Custom function adapted to the "generate_splines" function
+        in rascaline to compute the radial integrals
+
+        I_nl(rij) ∝ exp{-rij^2 / (2 σ^2)}
+                    x int_0^∞ dr * r^2 * dr R_nl exp{-r^2 / (2 σ^2)} il(r rij / σ^2)
+
+        where il is a modified spherical Bessel function.
+
+        INPUTS:
+        n : int
+            index of radial channel
+        l : int
+            index of angular channel
+        rij : float, np.ndarray
+            distance vector
+        """
+
+        rr = self.nodes
+        R_nl = self.evaluate_radial_basis_functions(rr)[l, n]
+
+        if type(rij) in [float, int]:
+            rij = np.array([rij])
+
+        prefac = (
+            4
+            * np.pi
+            / (np.pi * self.atomic_gaussian_width**2) ** (3 / 4)
+            * np.exp(-(rij**2) / (2 * self.atomic_gaussian_width**2))
+        )
+
+        bessel_kernel = rr * rij.reshape(-1, 1) / self.atomic_gaussian_width**2
+
+        integrand = (
+            rr**2
+            * R_nl
+            * np.exp(-(rr**2) / (2 * self.atomic_gaussian_width**2))
+            * spherical_in(l, bessel_kernel)
+        )
+
+        Inl = prefac * np.sum(self.weights * integrand, axis=1)
+
+        if not derivative:
+            return Inl
+        else:
+            dintegrand = (
+                rr**3
+                * R_nl
+                * np.exp(-(rr**2) / (2 * self.atomic_gaussian_width**2))
+                * spherical_in(l, bessel_kernel, derivative=True)
+            )
+
+            return self.atomic_gaussian_width**-2 * (
+                (prefac * np.sum(self.weights * dintegrand, axis=1)) - rij * Inl
+            )
