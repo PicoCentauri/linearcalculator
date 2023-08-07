@@ -148,7 +148,7 @@ def compute_descriptors(
                 potential_exponent=potential_exponent, **lr_hypers
             )
             calculator = PowerSpectrum(sr_calculator, lr_calculator)
-            ts = calculator.compute(**compute_args)
+            ts = calculator.compute(**compute_args, fill_species_neighbor=True)
         else:
             calculator = SoapPowerSpectrum(**config["soap_hypers"])
             ts = calculator.compute(**compute_args)
