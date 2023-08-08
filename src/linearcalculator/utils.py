@@ -111,7 +111,7 @@ def compute_descriptors(
 
         # Compute spherical expanions and power spectrum
         if potential_exponent != 0:
-            lr_hypers = config["lr_hypers"]
+            lr_hypers = config["lr_hypers"].copy()
             radial_basis = list(lr_hypers["radial_basis"].keys())[0]
 
             # Use TabulatedRadialIntegral if the basis is not Gto
