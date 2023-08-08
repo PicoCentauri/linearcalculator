@@ -6,7 +6,7 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "linearcalcular"
+name = "linearcalculator"
 description = "A frontend to calculate linear models with rascaline and equisolve."
 #readme = "README.rst"
 requires-python = ">=3.8"
