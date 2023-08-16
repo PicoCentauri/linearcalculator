@@ -1,5 +1,7 @@
 import itertools
 import logging
+import os
+import pickle
 import warnings
 
 import equistore
@@ -35,7 +37,7 @@ def compute_linear_models(config):
         gradients = None
 
     for i, potential_exponent in enumerate(potential_exponents):
-        ps_fname = f"descriptor_ps_{i}.npz"
+        ps_fname = f"descriptor_ps_{potential_exponent}.npz"
         co, ps_current = compute_descriptors(
             frames=frames,
             config=config,
@@ -267,59 +269,113 @@ def compute_linear_models(config):
                 l_rmse_y_train[i_alpha] = rmse_y_train
                 l_rmse_y_test[i_alpha] = rmse_y_test
 
-            if config["forces"]:
-                l_rmse_f_train *= 100 / sigma_force
-                l_rmse_f_test *= 100 / sigma_force
+                _conclude(
+                    config=config,
+                    realization=realization,
+                    results=results,
+                    key=key,
+                    alpha_values=alpha_values,
+                    l_clf=l_clf,
+                    l_rmse_y_train=l_rmse_y_train,
+                    l_rmse_y_test=l_rmse_y_test,
+                    l_y_pred_train=l_y_pred_train,
+                    l_y_pred_test=l_y_pred_test,
+                    sigma_energy=sigma_energy,
+                    sigma_force=sigma_force,
+                    l_rmse_f_train=l_rmse_f_train,
+                    l_rmse_f_test=l_rmse_f_test,
+                    l_f_pred_train=l_f_pred_train,
+                    l_f_pred_test=l_f_pred_test,
+                    sigma_force_mol=sigma_force_mol,
+                    l_rmse_f_train_mol=l_rmse_f_train_mol,
+                    l_rmse_f_test_mol=l_rmse_f_test_mol,
+                    l_f_pred_train_mol=l_f_pred_train_mol,
+                    l_f_pred_test_mol=l_f_pred_test_mol,
+                )
 
-                l_rmse_f_train_mol *= 100 / sigma_force_mol
-                l_rmse_f_test_mol *= 100 / sigma_force_mol
 
-            l_rmse_y_train *= 100 / sigma_energy
-            l_rmse_y_test *= 100 / sigma_energy
+def _conclude(
+    config,
+    realization,
+    results,
+    key,
+    alpha_values,
+    l_clf,
+    l_rmse_y_train,
+    l_rmse_y_test,
+    l_y_pred_train,
+    l_y_pred_test,
+    sigma_energy,
+    sigma_force=None,
+    l_rmse_f_train=None,
+    l_rmse_f_test=None,
+    l_f_pred_train=None,
+    l_f_pred_test=None,
+    sigma_force_mol=None,
+    l_rmse_f_train_mol=None,
+    l_rmse_f_test_mol=None,
+    l_f_pred_train_mol=None,
+    l_f_pred_test_mol=None,
+):
+    """Calculate results and save them to a pickle file."""
+    if config["forces"]:
+        l_rmse_f_train *= 100 / sigma_force
+        l_rmse_f_test *= 100 / sigma_force
 
-            # Find index of best model
-            if key == "e_f":
-                best_idx = np.nanargmin((l_rmse_y_test + l_rmse_f_test) / 2)
-            elif key == "e" and config["forces"]:
-                best_idx = np.nanargmin((l_rmse_y_test + l_rmse_f_test_mol) / 2)
-            else:
-                best_idx = np.nanargmin(l_rmse_y_test)
+        l_rmse_f_train_mol *= 100 / sigma_force_mol
+        l_rmse_f_test_mol *= 100 / sigma_force_mol
 
-            # Save data
-            realization[key] = Bunch(
-                # model
-                alpha_values=alpha_values,
-                l_clf=l_clf,
-                best_idx=best_idx,
-                clf=l_clf[best_idx],
-                alpha=alpha_values[best_idx],
-                # values
-                l_rmse_y_train=l_rmse_y_train,
-                l_rmse_y_test=l_rmse_y_test,
-                y_pred_test=l_y_pred_test[best_idx],
-                y_pred_train=l_y_pred_train[best_idx],
-                rmse_y_train=l_rmse_y_train[best_idx],
-                rmse_y_test=l_rmse_y_test[best_idx],
-                # auxiliary
-                sigma_energy=sigma_energy,
-                sigma_force=sigma_force,
-                sigma_force_mol=sigma_force_mol,
-            )
+    l_rmse_y_train *= 100 / sigma_energy
+    l_rmse_y_test *= 100 / sigma_energy
 
-            if config["forces"]:
-                # gradients
-                realization[key].l_rmse_f_train = l_rmse_f_train
-                realization[key].l_rmse_f_test = l_rmse_f_test
-                realization[key].f_pred_test = l_f_pred_test[best_idx]
-                realization[key].f_pred_train = l_f_pred_train[best_idx]
-                realization[key].rmse_f_train = l_rmse_f_train[best_idx]
-                realization[key].rmse_f_test = l_rmse_f_test[best_idx]
-                # gradients per molecule
-                realization[key].l_rmse_f_train_mol = l_rmse_f_train_mol
-                realization[key].l_rmse_f_test_mol = l_rmse_f_test_mol
-                realization[key].f_pred_test_mol = l_f_pred_test_mol[best_idx]
-                realization[key].f_pred_train_mol = l_f_pred_train_mol[best_idx]
-                realization[key].rmse_f_train_mol = l_rmse_f_train_mol[best_idx]
-                realization[key].rmse_f_test_mol = l_rmse_f_test_mol[best_idx]
+    # Find index of best model
+    if key == "e_f":
+        best_idx = np.nanargmin((l_rmse_y_test + l_rmse_f_test) / 2)
+    elif key == "e" and config["forces"]:
+        best_idx = np.nanargmin((l_rmse_y_test + l_rmse_f_test_mol) / 2)
+    else:
+        best_idx = np.nanargmin(l_rmse_y_test)
 
-    return results
+    # Save data
+    realization[key] = Bunch(
+        # model
+        alpha_values=alpha_values,
+        l_clf=l_clf,
+        best_idx=best_idx,
+        clf=l_clf[best_idx],
+        alpha=alpha_values[best_idx],
+        # values
+        l_rmse_y_train=l_rmse_y_train,
+        l_rmse_y_test=l_rmse_y_test,
+        y_pred_test=l_y_pred_test[best_idx],
+        y_pred_train=l_y_pred_train[best_idx],
+        rmse_y_train=l_rmse_y_train[best_idx],
+        rmse_y_test=l_rmse_y_test[best_idx],
+        # auxiliary
+        sigma_energy=sigma_energy,
+    )
+
+    if config["forces"]:
+        # gradients
+        realization[key].sigma_force = (sigma_force,)
+        realization[key].l_rmse_f_train = l_rmse_f_train
+        realization[key].l_rmse_f_test = l_rmse_f_test
+        realization[key].f_pred_train = l_f_pred_train[best_idx]
+        realization[key].f_pred_test = l_f_pred_test[best_idx]
+        realization[key].rmse_f_train = l_rmse_f_train[best_idx]
+        realization[key].rmse_f_test = l_rmse_f_test[best_idx]
+        # gradients per molecule
+        realization[key].sigma_force_mol = (sigma_force_mol,)
+        realization[key].l_rmse_f_train_mol = l_rmse_f_train_mol
+        realization[key].l_rmse_f_test_mol = l_rmse_f_test_mol
+        realization[key].f_pred_train_mol = l_f_pred_train_mol[best_idx]
+        realization[key].f_pred_test_mol = l_f_pred_test_mol[best_idx]
+        realization[key].rmse_f_train_mol = l_rmse_f_train_mol[best_idx]
+        realization[key].rmse_f_test_mol = l_rmse_f_test_mol[best_idx]
+
+    # Save models to pickle file
+    results_out = results.copy()
+    results_out["config"] = config
+
+    with open(os.path.join(config["output"], "results.pickle"), "wb") as f:
+        pickle.dump(results_out, f)

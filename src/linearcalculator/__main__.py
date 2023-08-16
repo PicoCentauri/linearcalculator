@@ -5,7 +5,6 @@ import argparse
 import contextlib
 import logging
 import os
-import pickle
 from logging.handlers import TimedRotatingFileHandler
 
 import tomli
@@ -87,13 +86,7 @@ def main():
     with setup_logging(logfile=args.logfile, debug=args.debug):
         with open(os.path.realpath(args.config_file), "rb") as f:
             config = tomli.load(f)
-            results = compute_linear_models(config)
-
-        results.config = config
-
-        # Save models to pickle file
-        with open(os.path.join(config["output"], "results.pickle"), "wb") as f:
-            pickle.dump(results, f)
+            compute_linear_models(config)
 
 
 if __name__ == "__main__":
