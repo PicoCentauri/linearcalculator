@@ -319,14 +319,14 @@ def _conclude(
 ):
     """Calculate results and save them to a pickle file."""
     if config["forces"]:
-        l_rmse_f_train *= 100 / sigma_force
-        l_rmse_f_test *= 100 / sigma_force
+        l_rmse_f_train_out = l_rmse_f_train * 100 / sigma_force
+        l_rmse_f_test_out = l_rmse_f_test * 100 / sigma_force
 
-        l_rmse_f_train_mol *= 100 / sigma_force_mol
-        l_rmse_f_test_mol *= 100 / sigma_force_mol
+        l_rmse_f_train_mol_out = l_rmse_f_train_mol * 100 / sigma_force_mol
+        l_rmse_f_test_mol_out = l_rmse_f_test_mol * 100 / sigma_force_mol
 
-    l_rmse_y_train *= 100 / sigma_energy
-    l_rmse_y_test *= 100 / sigma_energy
+    l_rmse_y_train_out = l_rmse_y_train * 100 / sigma_energy
+    l_rmse_y_test_out = l_rmse_y_test * 100 / sigma_energy
 
     # Find index of best model
     if key == "e_f":
@@ -345,8 +345,8 @@ def _conclude(
         clf=l_clf[best_idx],
         alpha=alpha_values[best_idx],
         # values
-        l_rmse_y_train=l_rmse_y_train,
-        l_rmse_y_test=l_rmse_y_test,
+        l_rmse_y_train=l_rmse_y_train_out,
+        l_rmse_y_test=l_rmse_y_test_out,
         y_pred_test=l_y_pred_test[best_idx],
         y_pred_train=l_y_pred_train[best_idx],
         rmse_y_train=l_rmse_y_train[best_idx],
@@ -357,17 +357,17 @@ def _conclude(
 
     if config["forces"]:
         # gradients
-        realization[key].sigma_force = (sigma_force,)
-        realization[key].l_rmse_f_train = l_rmse_f_train
-        realization[key].l_rmse_f_test = l_rmse_f_test
+        realization[key].sigma_force = sigma_force
+        realization[key].l_rmse_f_train = l_rmse_f_train_out
+        realization[key].l_rmse_f_test = l_rmse_f_test_out
         realization[key].f_pred_train = l_f_pred_train[best_idx]
         realization[key].f_pred_test = l_f_pred_test[best_idx]
         realization[key].rmse_f_train = l_rmse_f_train[best_idx]
         realization[key].rmse_f_test = l_rmse_f_test[best_idx]
         # gradients per molecule
-        realization[key].sigma_force_mol = (sigma_force_mol,)
-        realization[key].l_rmse_f_train_mol = l_rmse_f_train_mol
-        realization[key].l_rmse_f_test_mol = l_rmse_f_test_mol
+        realization[key].sigma_force_mol = sigma_force_mol
+        realization[key].l_rmse_f_train_mol = l_rmse_f_train_mol_out
+        realization[key].l_rmse_f_test_mol = l_rmse_f_test_mol_out
         realization[key].f_pred_train_mol = l_f_pred_train_mol[best_idx]
         realization[key].f_pred_test_mol = l_f_pred_test_mol[best_idx]
         realization[key].rmse_f_train_mol = l_rmse_f_train_mol[best_idx]
