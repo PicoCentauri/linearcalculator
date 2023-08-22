@@ -61,14 +61,14 @@ def compute_linear_models(config):
             else:
                 idx_test.append(i)
 
-        if len(idx_train) == 0:
+        if not idx_train:
             raise ValueError(
                 f"No training samples for " f"training_cutoff={training_cutoff}!"
             )
 
-        if len(idx_test) == 0:
-            raise ValueError(
-                f"No test samples for " f"training_cutoff={training_cutoff}!"
+        if not idx_test:
+            warnings.warn(
+                f"No training samples for " f"training_cutoff={training_cutoff}!"
             )
 
         results[training_cutoff] = Bunch(idx_train=idx_train, idx_test=idx_test)
@@ -88,10 +88,13 @@ def compute_linear_models(config):
     monomer_energies = np.array([f.info["energyA"] + f.info["energyB"] for f in frames])
 
     # Create combinations for gridsearch
-    alpha_values_single = np.logspace(-12, 3, config["n_alpha_values"])
-    alpha_values = list(
-        itertools.product(*(len(potential_exponents) * [alpha_values_single]))
-    )
+    if "alpha_values" in config.keys():
+        alpha_values = config["alpha_values"]
+    else:
+        alpha_values_single = np.logspace(-12, 3, config["n_alpha_values"])
+        alpha_values = list(
+            itertools.product(*(len(potential_exponents) * [alpha_values_single]))
+        )
 
     # Fit the models
     for realization in tqdm(results.values(), desc="fit models"):
@@ -208,11 +211,15 @@ def compute_linear_models(config):
                         f_train.flatten(),
                         squared=False,
                     )
-                    rmse_f_test = mean_squared_error(
-                        f_pred_test.flatten(),
-                        f_test.flatten(),
-                        squared=False,
-                    )
+
+                    if idx_test:
+                        rmse_f_test = mean_squared_error(
+                            f_pred_test.flatten(),
+                            f_test.flatten(),
+                            squared=False,
+                        )
+                    else:
+                        rmse_f_test = np.nan
 
                     # Compute gradient per molecules RMSE
                     f_pred_train_mol = np.array(
@@ -221,23 +228,29 @@ def compute_linear_models(config):
                             for m in np.split(f_pred_train, mol_idx_train_cumsum)
                         ]
                     )
-                    f_pred_test_mol = np.array(
-                        [
-                            np.sum(m, axis=0)
-                            for m in np.split(f_pred_test, mol_idx_test_cumsum)
-                        ]
-                    )
+                    if idx_test:
+                        f_pred_test_mol = np.array(
+                            [
+                                np.sum(m, axis=0)
+                                for m in np.split(f_pred_test, mol_idx_test_cumsum)
+                            ]
+                        )
+                    else:
+                        f_pred_test_mol = np.nan
 
                     rmse_f_train_mol = mean_squared_error(
                         f_pred_train_mol.flatten(),
                         f_train_mol.flatten(),
                         squared=False,
                     )
-                    rmse_f_test_mol = mean_squared_error(
-                        f_pred_test_mol.flatten(),
-                        f_test_mol.flatten(),
-                        squared=False,
-                    )
+                    if idx_test:
+                        rmse_f_test_mol = mean_squared_error(
+                            f_pred_test_mol.flatten(),
+                            f_test_mol.flatten(),
+                            squared=False,
+                        )
+                    else:
+                        rmse_f_test_mol = np.nan
 
                     l_f_pred_train[i_alpha] = f_pred_train
                     l_f_pred_test[i_alpha] = f_pred_test
@@ -259,7 +272,12 @@ def compute_linear_models(config):
                 rmse_y_train = mean_squared_error(
                     y_pred_train, y_train_red, squared=False
                 )
-                rmse_y_test = mean_squared_error(y_pred_test, y_test_red, squared=False)
+                if idx_test:
+                    rmse_y_test = mean_squared_error(
+                        y_pred_test, y_test_red, squared=False
+                    )
+                else:
+                    rmse_y_test = np.nan
 
                 # Store predictions
                 l_clf[i_alpha] = clf
@@ -329,12 +347,21 @@ def _conclude(
     l_rmse_y_test_out = l_rmse_y_test * 100 / sigma_energy
 
     # Find index of best model
-    if key == "e_f":
-        best_idx = np.nanargmin((l_rmse_y_test + l_rmse_f_test) / 2)
-    elif key == "e" and config["forces"]:
-        best_idx = np.nanargmin((l_rmse_y_test + l_rmse_f_test_mol) / 2)
-    else:
-        best_idx = np.nanargmin(l_rmse_y_test)
+    try:
+        if key == "e_f":
+            best_idx = np.nanargmin((l_rmse_y_test + l_rmse_f_test) / 2)
+        elif key == "e" and config["forces"]:
+            best_idx = np.nanargmin((l_rmse_y_test + l_rmse_f_test_mol) / 2)
+        else:
+            best_idx = np.nanargmin(l_rmse_y_test)
+    except ValueError as err:
+        logger.error("All test values are no numbers. Use train values instead.")
+        if key == "e_f":
+            best_idx = np.nanargmin((l_rmse_y_train + l_rmse_f_train) / 2)
+        elif key == "e" and config["forces"]:
+            best_idx = np.nanargmin((l_rmse_y_train + l_rmse_f_train_mol) / 2)
+        else:
+            best_idx = np.nanargmin(l_rmse_y_train)
 
     # Save data
     realization[key] = Bunch(
@@ -349,8 +376,8 @@ def _conclude(
         l_rmse_y_test=l_rmse_y_test_out,
         y_pred_test=l_y_pred_test[best_idx],
         y_pred_train=l_y_pred_train[best_idx],
-        rmse_y_train=l_rmse_y_train[best_idx],
-        rmse_y_test=l_rmse_y_test[best_idx],
+        rmse_y_train=l_rmse_y_train_out[best_idx],
+        rmse_y_test=l_rmse_y_test_out[best_idx],
         # auxiliary
         sigma_energy=sigma_energy,
     )
@@ -362,20 +389,20 @@ def _conclude(
         realization[key].l_rmse_f_test = l_rmse_f_test_out
         realization[key].f_pred_train = l_f_pred_train[best_idx]
         realization[key].f_pred_test = l_f_pred_test[best_idx]
-        realization[key].rmse_f_train = l_rmse_f_train[best_idx]
-        realization[key].rmse_f_test = l_rmse_f_test[best_idx]
+        realization[key].rmse_f_train = l_rmse_f_train_out[best_idx]
+        realization[key].rmse_f_test = l_rmse_f_test_out[best_idx]
         # gradients per molecule
         realization[key].sigma_force_mol = sigma_force_mol
         realization[key].l_rmse_f_train_mol = l_rmse_f_train_mol_out
         realization[key].l_rmse_f_test_mol = l_rmse_f_test_mol_out
         realization[key].f_pred_train_mol = l_f_pred_train_mol[best_idx]
         realization[key].f_pred_test_mol = l_f_pred_test_mol[best_idx]
-        realization[key].rmse_f_train_mol = l_rmse_f_train_mol[best_idx]
-        realization[key].rmse_f_test_mol = l_rmse_f_test_mol[best_idx]
+        realization[key].rmse_f_train_mol = l_rmse_f_train_mol_out[best_idx]
+        realization[key].rmse_f_test_mol = l_rmse_f_test_mol_out[best_idx]
 
     # Save models to pickle file
     results_out = results.copy()
     results_out["config"] = config
 
-    with open(os.path.join(config["output"], "results.pickle"), "wb") as f:
+    with open(os.path.join(config["output"], "results_test.pickle"), "wb") as f:
         pickle.dump(results_out, f)
