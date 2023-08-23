@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def compute_linear_models(config):
-    frames = setup_dataset(config["dataset"], config["label"], config["cell_length"])
+    frames = setup_dataset(filenames=config["dataset"], labels=config["labels"], cell_length=config["cell_length"])
 
     potential_exponents = config["potential_exponents"]
     if type(potential_exponents) == int:

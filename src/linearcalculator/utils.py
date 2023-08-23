@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import List
+from typing import List, Union
 
 import ase.io
 import equistore
@@ -21,7 +21,9 @@ logger = logging.getLogger(__name__)
 
 
 def setup_dataset(
-    filenames: List[List[ase.Atoms]], label: str, cell_length: float = -1
+    filenames: List[List[ase.Atoms]],
+    labels: Union[List[str], str],
+    cell_length: float = -1,
 ):
     """
     Read and process `ase.Atoms` from files, filter by label and set cell length.
@@ -37,12 +39,12 @@ def setup_dataset(
 
     Parameters:
     -----------
-    filenames: list of `ase.Atoms` objects
+    filenames : list of `ase.Atoms` objects
         List of ASE Atoms objects to read from.
-    label: str
-        The label to match with info["label"] to select specific Atoms objects. If
+    labels : list of `str` or `str`
+        The labels to match with info["label"] to select specific Atoms objects. If
         "all", returns all the Atoms objects.
-    cell_length: float
+    cell_length : float
         The length of the cell for all Atoms objects.
 
     Returns:
@@ -59,11 +61,18 @@ def setup_dataset(
     for filename in filenames:
         frames += ase.io.read(filename, ":")
 
-    label = label.lower()
-    if label[0] == "!":
-        frames = [f for f in frames if f.info["label"].lower() != label[1:]]
-    elif label != "all":
-        frames = [f for f in frames if f.info["label"].lower() == label.lower()]
+    if type(labels) not in [list, tuple]:
+        labels = [labels.lower()]
+    else:
+        labels = [label.lower() for label in labels]
+
+    if "all" not in labels:
+        frames_new = []
+        for atoms in frames:
+            label = atoms.info["label"].lower()
+            if label in labels:
+                frames_new.append(atoms)
+        frames = frames_new
 
     if cell_length != -1:
         for frame in frames:
