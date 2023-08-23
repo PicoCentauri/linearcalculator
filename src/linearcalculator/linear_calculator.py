@@ -404,5 +404,5 @@ def _conclude(
     results_out = results.copy()
     results_out["config"] = config
 
-    with open(os.path.join(config["output"], "results_test.pickle"), "wb") as f:
+    with open(os.path.join(config["output"], "results.pickle"), "wb") as f:
         pickle.dump(results_out, f)
