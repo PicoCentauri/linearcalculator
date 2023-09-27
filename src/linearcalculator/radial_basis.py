@@ -298,6 +298,7 @@ class RadialBasis(ABC):
             max_angular=self.max_angular,
             spline_cutoff=cutoff_radius,
             accuracy=requested_accuracy,
+            center_contribution=[0 for _ in range(self.max_radial)],
         ).compute()
 
 
