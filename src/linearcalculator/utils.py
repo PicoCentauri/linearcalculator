@@ -139,18 +139,10 @@ def compute_descriptors(
                 )
 
                 k_cut = 1.2 * np.pi / lr_hypers["atomic_gaussian_width"]
-                spline_points = rad.spline_points(
+
+                lr_hypers["radial_basis"] = rad.spline_points(
                     cutoff_radius=k_cut, requested_accuracy=1e-8
                 )
-
-                lr_hypers["radial_basis"] = {
-                    "TabulatedRadialIntegral": {
-                        "points": spline_points,
-                        "center_contribution": [
-                            0.0 for _ in range(lr_hypers["max_radial"])
-                        ],
-                    }
-                }
 
             sr_calculator = SphericalExpansion(**config["sr_hypers"])
             lr_calculator = LodeSphericalExpansion(

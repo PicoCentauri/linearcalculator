@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 import numpy as np
-from rascaline import generate_splines
+from rascaline.utils import RadialIntegralFromFunction
 from scipy.optimize import fsolve
 from scipy.special import spherical_in, spherical_jn
 
@@ -291,14 +291,14 @@ class RadialBasis(ABC):
         def radial_basis_derivatives(n, l, k):
             return self._radial_integral(n, l, k, derivative=True)
 
-        return generate_splines(
+        return RadialIntegralFromFunction(
             radial_basis=radial_basis,
             radial_basis_derivatives=radial_basis_derivatives,
             max_radial=self.max_radial,
             max_angular=self.max_angular,
             cutoff_radius=cutoff_radius,
             requested_accuracy=requested_accuracy,
-        )
+        ).compute()
 
 
 class KspaceRadialBasis(RadialBasis):
